@@ -239,3 +239,25 @@
             [:after-action 3 :actions/inc [:effects/save]]
             [:after-action 2 :actions/inc [:effects/save]]
             [:after-action 1 :actions/inc [:effects/save]]]))))
+
+(deftest interpolate-test
+  (testing "No-ops when there are no placeholders"
+    (is (= (nexus/interpolate {} {} [[:actions/inc 3]])
+           [[:actions/inc 3]])))
+
+  (testing "Replaces placeholder form"
+    (is (= (-> {:placeholders {:number (fn [{:keys [value]}] value)}}
+               (nexus/interpolate {:value 3} [[:actions/inc [:number]]]))
+           [[:actions/inc 3]])))
+
+  (testing "Does not replace naked placeholder keyword"
+    (is (= (-> {:placeholders {:number (fn [{:keys [value]}] value)}}
+               (nexus/interpolate {:value 3} [[:actions/inc :number]]))
+           [[:actions/inc :number]])))
+
+  (testing "Nests placeholders"
+    (is (= (-> {:placeholders
+                {:value (fn [{:keys [value]}] value)
+                 :number (fn [_ s] (some-> s parse-long))}}
+               (nexus/interpolate {:value "5"} [[:actions/inc [:number [:value]]]]))
+           [[:actions/inc 5]]))))

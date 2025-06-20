@@ -1,4 +1,5 @@
-(ns nexus.core)
+(ns nexus.core
+  (:require [clojure.walk :as walk]))
 
 (def ^:private conjv (fnil conj []))
 (def ^:private intov (fnil into []))
@@ -82,3 +83,17 @@
                 (seq actions) (update :effects into actions)
                 (seq errors) (update :errors intov errors))))
           {} actions))
+
+(defn interpolate
+  "Walks `actions`, and replaces any forms matching a registered placeholder with
+  the value of calling the corresponding function with `dispatch-data`. Returns
+  interpolated `actions`."
+  {:arglists '[[nexus dispatch-data actions]]}
+  [{:keys [placeholders]} dispatch-data actions]
+  (walk/postwalk
+   (fn [x]
+     (if-let [f (when (vector? x)
+                  (get placeholders (first x)))]
+       (apply f dispatch-data (next x))
+       x))
+   actions))
