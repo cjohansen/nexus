@@ -62,6 +62,15 @@
    :after-action (fn [in]
                    (swap! log conj (cond-> [:after-action n (get-in in [:action 0])]
                                      (seq (:actions in)) (conj (mapv first (:actions in)))))
+                   in)
+   :before-effect (fn [in]
+                    (swap! log conj [:before-effect n
+                                     (first (or (:effect in) (first (:effects in))))])
+                    in)
+   :after-effect (fn [in]
+                   (swap! log conj [:after-effect n
+                                    (first (or (:effect in) (first (:effects in))))
+                                    (:res in)])
                    in)})
 
 (deftest expand-actions-test
@@ -261,3 +270,104 @@
                  :number (fn [_ s] (some-> s parse-long))}}
                (nexus/interpolate {:value "5"} [[:actions/inc [:number [:value]]]]))
            [[:actions/inc 5]]))))
+
+(def nexus-with-save
+  {:effects
+   {:effects/save
+    (fn [_ store path v]
+      (swap! store assoc-in path v))}})
+
+(def nexus-with-batched-save
+  {:effects
+   {:effects/save
+    ^:nexus/batch
+    (fn [_ store path-vs]
+      (swap! store
+             (fn [state]
+               (reduce (fn [s [p v]] (assoc-in s p v)) state path-vs))))}})
+
+(deftest execute-test
+  (testing "Fails when there is no implementation"
+    (is (= (-> (nexus/execute {} {:system (atom {})} [[:effects/save [:number] 3]])
+               datafy-errors)
+           {:errors [{:phase :execute-effect
+                      :effect-k :effects/save
+                      :err {:message "No such effect"
+                            :data {:available-effects nil}}}]})))
+
+  (testing "Returns result of executing effect"
+    (is (= (-> {:effects
+                {:effects/save
+                 (fn [_ store path v]
+                   (swap! store assoc-in path v))}}
+               (nexus/execute
+                {:system (atom {:existing "Data"})}
+                [[:effects/save [:number] 3]]))
+           {:results
+            [{:effect [:effects/save [:number] 3]
+              :res {:existing "Data"
+                    :number 3}}]})))
+
+  (testing "Processes effects one by one"
+    (is (= (-> nexus-with-save
+               (nexus/execute
+                {:system (atom {:existing "Data"})}
+                [[:effects/save [:number] 3]
+                 [:effects/save [:name] "Nexus"]]))
+           {:results
+            [{:effect [:effects/save [:number] 3]
+              :res {:existing "Data"
+                    :number 3}}
+             {:effect [:effects/save [:name] "Nexus"]
+              :res {:existing "Data"
+                    :number 3
+                    :name "Nexus"}}]})))
+
+  (testing "Optionally batch processes effect"
+    (is (= (-> nexus-with-batched-save
+               (nexus/execute
+                {:system (atom {:existing "Data"})}
+                [[:effects/save [:number] 3]
+                 [:effects/save [:name] "Nexus"]]))
+           {:results
+            [{:effects [[:effects/save [:number] 3]
+                        [:effects/save [:name] "Nexus"]]
+              :res {:existing "Data"
+                    :number 3
+                    :name "Nexus"}}]})))
+
+  (testing "Calls interceptors in order"
+    (is (= (let [log (atom [])]
+             (-> nexus-with-save
+                 (assoc :interceptors
+                        [(log-interceptor log 1)
+                         (log-interceptor log 2)
+                         (log-interceptor log 3)])
+                 (nexus/execute
+                  {:system (atom {:existing "Data"})}
+                  [[:effects/save [:number] 9]]))
+             @log)
+           [[:before-effect 1 :effects/save]
+            [:before-effect 2 :effects/save]
+            [:before-effect 3 :effects/save]
+            [:after-effect 3 :effects/save {:existing "Data", :number 9}]
+            [:after-effect 2 :effects/save {:existing "Data", :number 9}]
+            [:after-effect 1 :effects/save {:existing "Data", :number 9}]])))
+
+  (testing "Calls interceptors for batch in order"
+    (is (= (let [log (atom [])]
+             (-> nexus-with-batched-save
+                 (assoc :interceptors
+                        [(log-interceptor log 1)
+                         (log-interceptor log 2)
+                         (log-interceptor log 3)])
+                 (nexus/execute
+                  {:system (atom {:existing "Data"})}
+                  [[:effects/save [:number] 9]]))
+             @log)
+           [[:before-effect 1 :effects/save]
+            [:before-effect 2 :effects/save]
+            [:before-effect 3 :effects/save]
+            [:after-effect 3 :effects/save {:existing "Data", :number 9}]
+            [:after-effect 2 :effects/save {:existing "Data", :number 9}]
+            [:after-effect 1 :effects/save {:existing "Data", :number 9}]]))))

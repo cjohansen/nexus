@@ -97,3 +97,49 @@
        (apply f dispatch-data (next x))
        x))
    actions))
+
+(defn ^:no-doc get-batched-effects [nexus]
+  (->> (:effects nexus)
+       (filter (comp :nexus/batch meta val))
+       (mapv key)
+       set))
+
+(defn ^:no-doc wrap-batched-effect-handler [f ctx]
+  (assoc ctx :res (f (dissoc ctx :system :actions :effects :queue :stack)
+                     (:system ctx)
+                     (mapv next (:effects ctx)))))
+
+(defn ^:no-doc wrap-effect-handler [f ctx]
+  (assoc ctx :res (apply f (dissoc ctx :system :actions :effect :queue :stack)
+                         (:system ctx)
+                         (next (:effect ctx)))))
+
+(defn ^:no-doc execute-batch [acc nexus ctx effect-k effects k wrap-handler]
+  (if-let [f (get-in nexus [:effects effect-k])]
+    (let [v (cond-> effects
+              (= k :effect) first)
+          ret (run-interceptors (assoc ctx k v)
+                (conj (vec (:interceptors nexus))
+                      {:phase :execute-effect
+                       :before-effect (partial wrap-handler f)})
+                [:before-effect :after-effect])]
+      (cond-> (update acc :results conjv (into {k v} (select-keys ret [:res])))
+        (:errors ret) (update :errors intov (:errors ret))))
+    (update acc :errors conjv
+            {:phase :execute-effect
+             :effect-k effect-k
+             :err (ex-info "No such effect" {:available-effects (keys (:effects nexus))})})))
+
+(defn execute
+  "Execute `effects` one by one. Calls every `:before-effect` interceptor before
+  executing the action, and every `:after-effect` interceptor after. Returns a
+  collection of maps of `{:action :res}` where `:res` is the return value of the
+  effect implementation."
+  [nexus ctx effects]
+  (->> (group-by (comp (get-batched-effects nexus) first) effects)
+       (reduce
+        (fn [acc [effect-k effects]]
+          (if effect-k
+            (execute-batch acc nexus ctx effect-k effects :effects wrap-batched-effect-handler)
+            (reduce #(execute-batch %1 nexus ctx (first %2) [%2] :effect wrap-effect-handler)
+                    acc effects))) {})))
