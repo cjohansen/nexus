@@ -143,3 +143,26 @@
             (execute-batch acc nexus ctx effect-k effects :effects wrap-batched-effect-handler)
             (reduce #(execute-batch %1 nexus ctx (first %2) [%2] :effect wrap-effect-handler)
                     acc effects))) {})))
+
+(defn dispatch [nexus system dispatch-data actions]
+  (when (:actions nexus)
+    (assert (ifn? (:system->state nexus)) ":system->state must be a function"))
+  (let [dispatch!
+        (fn dispatch! [actions & [disp-data]]
+          (let [handler {:phase :action-dispatch
+                         :before-dispatch
+                         (fn [ctx]
+                           (let [actions (interpolate nexus (:dispatch-data ctx) (:actions ctx))
+                                 {:keys [effects errors]} (expand-actions nexus ((:system->state nexus) (:system ctx)) actions)]
+                             (cond-> ctx
+                               errors (assoc :errors errors)
+                               effects (into (execute nexus (assoc (dissoc ctx :actions) :dispatch dispatch!)
+                                                      (cond->> effects
+                                                        (not= actions effects)
+                                                        (interpolate nexus (:dispatch-data ctx))))))))}]
+            (run-interceptors {:system system
+                               :dispatch-data (merge dispatch-data disp-data)
+                               :actions actions}
+              (conj (vec (:interceptors nexus)) handler)
+              [:before-dispatch :after-dispatch])))]
+    (select-keys (dispatch! actions) [:results :errors])))

@@ -71,7 +71,13 @@
                    (swap! log conj [:after-effect n
                                     (first (or (:effect in) (first (:effects in))))
                                     (:res in)])
-                   in)})
+                   in)
+   :before-dispatch (fn [in]
+                      (swap! log conj [:before-dispatch n (:actions in)])
+                      in)
+   :after-dispatch (fn [in]
+                     (swap! log conj [:after-dispatch n (:results in)])
+                     in)})
 
 (deftest expand-actions-test
   (testing "Noops without any expansions"
@@ -371,3 +377,60 @@
             [:after-effect 3 :effects/save {:existing "Data", :number 9}]
             [:after-effect 2 :effects/save {:existing "Data", :number 9}]
             [:after-effect 1 :effects/save {:existing "Data", :number 9}]]))))
+
+(deftest dispatch-test
+  (testing "Expands, interpolates and executes action"
+    (is (= (let [store (atom {:step-size 3})]
+             (-> {:system->state deref
+                  :placeholders {:dispatch/number (fn [{:keys [value]}] value)}}
+                 (merge nexus-with-inc)
+                 (merge nexus-with-save)
+                 (nexus/dispatch store {:value 5} [[:actions/inc [:dispatch/number]]]))
+             @store)
+           {:step-size 3
+            :number 6})))
+
+  (testing "Returns results"
+    (is (= (let [store (atom {:step-size 3})]
+             (-> {:system->state deref
+                  :placeholders {:dispatch/number (fn [{:keys [value]}] value)}}
+                 (merge nexus-with-inc)
+                 (merge nexus-with-save)
+                 (nexus/dispatch store {:value 5} [[:actions/inc [:dispatch/number]]])))
+           {:results [{:effect [:effects/save [:number] 6]
+                       :res {:step-size 3
+                             :number 6}}]})))
+
+  (testing "Runs interceptors in order"
+    (is (= (let [store (atom {:step-size 3})
+                 log (atom [])]
+             (-> {:system->state deref
+                  :placeholders {:dispatch/number (fn [{:keys [value]}] value)}
+                  :interceptors [(log-interceptor log 1)
+                                 (log-interceptor log 2)
+                                 (log-interceptor log 3)]}
+                 (merge nexus-with-inc)
+                 (merge nexus-with-save)
+                 (nexus/dispatch store {:value 5} [[:actions/inc [:dispatch/number]]]))
+             @log)
+           [[:before-dispatch 1 [[:actions/inc [:dispatch/number]]]]
+            [:before-dispatch 2 [[:actions/inc [:dispatch/number]]]]
+            [:before-dispatch 3 [[:actions/inc [:dispatch/number]]]]
+            [:before-action 1 :actions/inc]
+            [:before-action 2 :actions/inc]
+            [:before-action 3 :actions/inc]
+            [:after-action 3 :actions/inc [:effects/save]]
+            [:after-action 2 :actions/inc [:effects/save]]
+            [:after-action 1 :actions/inc [:effects/save]]
+            [:before-effect 1 :effects/save]
+            [:before-effect 2 :effects/save]
+            [:before-effect 3 :effects/save]
+            [:after-effect 3 :effects/save {:step-size 3, :number 6}]
+            [:after-effect 2 :effects/save {:step-size 3, :number 6}]
+            [:after-effect 1 :effects/save {:step-size 3, :number 6}]
+            [:after-dispatch 3 [{:effect [:effects/save [:number] 6]
+                                 :res {:step-size 3, :number 6}}]]
+            [:after-dispatch 2 [{:effect [:effects/save [:number] 6]
+                                 :res {:step-size 3, :number 6}}]]
+            [:after-dispatch 1 [{:effect [:effects/save [:number] 6]
+                                 :res {:step-size 3, :number 6}}]]]))))
