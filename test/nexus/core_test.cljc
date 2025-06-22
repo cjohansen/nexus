@@ -433,4 +433,39 @@
             [:after-dispatch 2 [{:effect [:effects/save [:number] 6]
                                  :res {:step-size 3, :number 6}}]]
             [:after-dispatch 1 [{:effect [:effects/save [:number] 6]
-                                 :res {:step-size 3, :number 6}}]]]))))
+                                 :res {:step-size 3, :number 6}}]]])))
+
+    (testing "Dispatches actions recursively with new dispatch data"
+      (is (= (let [store (atom {:step-size 3})
+                   log (atom [])]
+               (-> {:system->state deref
+                    :placeholders {:dd/k (fn [dispatch-data k]
+                                           (if (contains? dispatch-data k)
+                                             (k dispatch-data)
+                                             [:dd/k k]))}
+                    :interceptors [(log-interceptor log 1)]
+                    :effects {:effects/save
+                              (fn [{:keys [dispatch]} store path v & [{:keys [on-success]}]]
+                                (let [res (swap! store assoc-in path v)]
+                                  (when on-success
+                                    (dispatch on-success res))
+                                  nil))}}
+                   (merge nexus-with-inc)
+                   (nexus/dispatch store {:value 5}
+                       [[:effects/save [:number] [:dd/k :value]
+                         {:on-success [[:effects/save [:second-number] [:dd/k :number]]]}]]))
+               [@store @log])
+             [{:step-size 3
+               :number 5
+               :second-number 5}
+              [[:before-dispatch 1 [[:effects/save [:number] [:dd/k :value]
+                                     {:on-success [[:effects/save [:second-number] [:dd/k :number]]]}]]]
+               [:before-effect 1 :effects/save]
+               [:before-dispatch 1 [[:effects/save [:second-number] [:dd/k :number]]]]
+               [:before-effect 1 :effects/save]
+               [:after-effect 1 :effects/save nil]
+               [:after-dispatch 1 [{:effect [:effects/save [:second-number] 5], :res nil}]]
+               [:after-effect 1 :effects/save nil]
+               [:after-dispatch 1 [{:effect [:effects/save [:number] 5
+                                             {:on-success [[:effects/save [:second-number] [:dd/k :number]]]}],
+                                    :res nil}]]]]))))
