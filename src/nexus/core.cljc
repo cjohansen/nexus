@@ -39,10 +39,11 @@
 (defn ^:no-doc wrap-action-handler [f ctx]
   (assoc ctx :actions (apply f (:state ctx) (next (:action ctx)))))
 
-(defn ^:no-doc expand-action [nexus state [kind :as action]]
+(defn ^:no-doc expand-action [nexus state [kind :as action] errors]
   (if-let [f (get-in nexus [:actions kind])]
     (let [{:keys [action actions errors]}
-          (run-interceptors {:state state :action action}
+          (run-interceptors (cond-> {:state state :action action}
+                              errors (assoc :errors errors))
             (conj (vec (:interceptors nexus))
                   {:phase :expand-action
                    :before-action (partial wrap-action-handler f)})
@@ -64,7 +65,7 @@
 
         :else
         (reduce (fn [res action]
-                  (let [{:keys [errors actions]} (expand-action nexus state action)]
+                  (let [{:keys [errors actions]} (expand-action nexus state action (:errors res))]
                     (cond-> res
                       (seq errors) (update :errors into errors)
                       (seq actions) (update :actions into actions))))
@@ -78,10 +79,10 @@
   `:after-action` interceptor after. Returns a map of `{:effects :errors}`."
   [nexus state actions]
   (reduce (fn [res action]
-            (let [{:keys [actions errors]} (expand-action nexus state action)]
+            (let [{:keys [actions errors]} (expand-action nexus state action (:errors res))]
               (cond-> res
                 (seq actions) (update :effects into actions)
-                (seq errors) (update :errors intov errors))))
+                (seq errors) (assoc :errors errors))))
           {} actions))
 
 (defn interpolate
@@ -118,13 +119,14 @@
   (if-let [f (get-in nexus [:effects effect-k])]
     (let [v (cond-> effects
               (= k :effect) first)
-          ret (run-interceptors (assoc ctx k v)
+          ret (run-interceptors (into (assoc ctx k v) (select-keys acc [:errors]))
                 (conj (vec (:interceptors nexus))
                       {:phase :execute-effect
                        :before-effect (partial wrap-handler f)})
-                [:before-effect :after-effect])]
-      (cond-> (update acc :results conjv (into {k v} (select-keys ret [:res])))
-        (:errors ret) (update :errors intov (:errors ret))))
+                [:before-effect :after-effect :effect])]
+      (cond-> acc
+        (:res ret) (update :results conjv (into {k v} (select-keys ret [:res])))
+        (:errors ret) (assoc :errors (:errors ret))))
     (update acc :errors conjv
             {:phase :execute-effect
              :effect-k effect-k
@@ -144,7 +146,7 @@
             (reduce #(execute-batch %1 nexus ctx (first %2) [%2] :effect wrap-effect-handler)
                     acc effects))) {})))
 
-(defn dispatch [nexus system dispatch-data actions]
+(defn ^{:indent 3} dispatch [nexus system dispatch-data actions]
   (when (:actions nexus)
     (assert (ifn? (:system->state nexus)) ":system->state must be a function"))
   (let [dispatch!

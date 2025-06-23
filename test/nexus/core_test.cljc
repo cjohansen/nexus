@@ -1,8 +1,8 @@
 (ns nexus.core-test
   (:require [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
-            [clojure.walk :as walk]
-            [nexus.core :as nexus]))
+            [nexus.core :as nexus]
+            [nexus.test-helper :as h]))
 
 (deftest action?-test
   (testing "Detects action"
@@ -19,30 +19,6 @@
     (is (true? (nexus/actions? [[:actions/doit "Now!"]])))
     (is (true? (nexus/actions? [[:actions/doit "Now!"]
                                 [:actions/also "Do" :this]])))))
-
-(defn get-message [e]
-  #?(:clj (.getMessage e)
-     :cljs (.-message e)))
-
-(defn ex->data [e]
-  {:message (get-message e)
-   :data (walk/prewalk
-          (fn [x]
-            (cond
-              (and (:err x) (not (map? (:err x))))
-              (let [data (ex-data (:err x))]
-                (assoc x :err
-                       (cond-> {:message (get-message (:err x))}
-                         (not-empty data) (assoc :data data))))
-
-              (fn? x)
-              ::fn
-
-              :else x))
-          (ex-data e))})
-
-(defn datafy-errors [res]
-  (update res :errors (fn [errors] (mapv #(update % :err ex->data) errors))))
 
 (defn ^{:indent 2} with-interceptor [nexus phase f & [id]]
   (update nexus :interceptors (fnil conj []) (cond-> {phase f}
@@ -110,7 +86,7 @@
                  (fn [{:keys [config]} arg]
                    [:actions/store (:n config) arg])}}
                (nexus/expand-actions {:config {:n 2}} [[:actions/test "it"]])
-               datafy-errors)
+               h/datafy-errors)
            {:errors
             [{:action [:actions/test "it"]
               :phase :expand-action
@@ -142,7 +118,7 @@
                  (fn [_ _]
                    (throw (ex-info "Boom!" {})))}}
                (nexus/expand-actions {} [[:actions/inc 2]])
-               datafy-errors)
+               h/datafy-errors)
            {:errors [{:phase :expand-action
                       :action [:actions/inc 2]
                       :err {:message "Boom!"
@@ -180,7 +156,7 @@
                  (fn [ctx]
                    (throw (ex-info "Boom!" {:ctx ctx}))))
                (nexus/expand-actions {:state "Here"} [[:actions/inc 2]])
-               datafy-errors)
+               h/datafy-errors)
            {:effects [[:effects/save [:number] 3]]
             :errors
             [{:phase :before-action
@@ -191,8 +167,8 @@
                 {:state {:state "Here"}
                  :action [:actions/inc 2]
                  :queue [{:phase :expand-action
-                          :before-action ::fn}]
-                 :stack [{:before-action ::fn}]}}}
+                          :before-action ::h/fn}]
+                 :stack [{:before-action ::h/fn}]}}}
               :action [:actions/inc 2]}]})))
 
   (testing "Returns error from after-action interceptor"
@@ -201,7 +177,7 @@
                    (throw (ex-info "Boom!" {:ctx ctx})))
                  :logger)
                (nexus/expand-actions {:state "Here"} [[:actions/inc 2]])
-               datafy-errors)
+               h/datafy-errors)
            {:effects [[:effects/save [:number] 3]]
             :errors
             [{:phase :after-action
@@ -226,7 +202,7 @@
                     (:errors %) (dissoc :queue :stack))
                  :abort-early)
                (nexus/expand-actions {:state "Here"} [[:actions/inc 2]])
-               datafy-errors
+               h/datafy-errors
                (update-in [:errors 0 :err] select-keys [:message]))
            ;; No effects!
            {:errors
@@ -295,7 +271,7 @@
 (deftest execute-test
   (testing "Fails when there is no implementation"
     (is (= (-> (nexus/execute {} {:system (atom {})} [[:effects/save [:number] 3]])
-               datafy-errors)
+               h/datafy-errors)
            {:errors [{:phase :execute-effect
                       :effect-k :effects/save
                       :err {:message "No such effect"
@@ -449,7 +425,7 @@
                                 (let [res (swap! store assoc-in path v)]
                                   (when on-success
                                     (dispatch on-success res))
-                                  nil))}}
+                                  res))}}
                    (merge nexus-with-inc)
                    (nexus/dispatch store {:value 5}
                        [[:effects/save [:number] [:dd/k :value]
@@ -463,9 +439,9 @@
                [:before-effect 1 :effects/save]
                [:before-dispatch 1 [[:effects/save [:second-number] [:dd/k :number]]]]
                [:before-effect 1 :effects/save]
-               [:after-effect 1 :effects/save nil]
-               [:after-dispatch 1 [{:effect [:effects/save [:second-number] 5], :res nil}]]
-               [:after-effect 1 :effects/save nil]
+               [:after-effect 1 :effects/save {:number 5, :second-number 5, :step-size 3}]
+               [:after-dispatch 1 [{:effect [:effects/save [:second-number] 5], :res {:number 5, :second-number 5, :step-size 3}}]]
+               [:after-effect 1 :effects/save {:number 5, :step-size 3}]
                [:after-dispatch 1 [{:effect [:effects/save [:number] 5
                                              {:on-success [[:effects/save [:second-number] [:dd/k :number]]]}],
-                                    :res nil}]]]]))))
+                                    :res {:number 5, :step-size 3}}]]]]))))
