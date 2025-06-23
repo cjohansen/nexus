@@ -3,6 +3,9 @@
 
 (def ^:no-doc !registry (atom {}))
 
+(defn register-system->state! [f]
+  (swap! !registry assoc :system->state f))
+
 (defn ^{:indent 1} register-action! [action-k f]
   (swap! !registry assoc-in [:actions action-k] f))
 
