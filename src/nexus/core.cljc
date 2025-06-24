@@ -91,12 +91,17 @@
   interpolated `actions`."
   {:arglists '[[nexus dispatch-data actions]]}
   [{:keys [placeholders]} dispatch-data actions]
-  (walk/postwalk
-   (fn [x]
-     (if-let [f (when (vector? x)
-                  (get placeholders (first x)))]
-       (apply f dispatch-data (next x))
-       x))
+  (mapv
+   #(let [interpolated
+          (walk/postwalk
+           (fn [x]
+             (if-let [f (when (vector? x)
+                          (get placeholders (first x)))]
+               (apply f dispatch-data (next x))
+               x))
+           %)]
+      (cond-> interpolated
+        (not= interpolated %) (with-meta {:nexus/action %})))
    actions))
 
 (defn ^:no-doc get-batched-effects [nexus]

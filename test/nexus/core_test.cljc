@@ -251,7 +251,24 @@
                 {:value (fn [{:keys [value]}] value)
                  :number (fn [_ s] (some-> s parse-long))}}
                (nexus/interpolate {:value "5"} [[:actions/inc [:number [:value]]]]))
-           [[:actions/inc 5]]))))
+           [[:actions/inc 5]])))
+
+  (testing "Stores original action as meta data"
+    (is (= (-> {:placeholders
+                {:value (fn [{:keys [value]}] value)
+                 :number (fn [_ s] (some-> s parse-long))}}
+               (nexus/interpolate {:value "5"} [[:actions/inc [:number [:value]]]])
+               first
+               meta
+               :nexus/action)
+           [:actions/inc [:number [:value]]])))
+
+  (testing "Does not store meta on actions without interpolations"
+    (is (nil? (-> {}
+                  (nexus/interpolate {:value "5"} [[:actions/inc 3]])
+                  first
+                  meta
+                  :nexus/action)))))
 
 (def nexus-with-save
   {:effects
