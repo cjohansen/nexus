@@ -2,7 +2,6 @@
   (:require [clojure.walk :as walk]))
 
 (def ^:private conjv (fnil conj []))
-(def ^:private intov (fnil into []))
 
 (defn action? [data]
   (and (vector? data) (keyword? (first data))))
@@ -160,7 +159,7 @@
                          :before-dispatch
                          (fn [ctx]
                            (let [actions (interpolate nexus (:dispatch-data ctx) (:actions ctx))
-                                 {:keys [effects errors]} (expand-actions nexus ((:system->state nexus) (:system ctx)) actions)]
+                                 {:keys [effects errors]} (expand-actions nexus (:state ctx) actions)]
                              (cond-> ctx
                                errors (assoc :errors errors)
                                effects (into (execute nexus (assoc (dissoc ctx :actions) :dispatch dispatch!)
@@ -168,6 +167,8 @@
                                                         (not= actions effects)
                                                         (interpolate nexus (:dispatch-data ctx))))))))}]
             (run-interceptors {:system system
+                               :state (when-let [system->state (:system->state nexus)]
+                                        (system->state system))
                                :dispatch-data (merge dispatch-data disp-data)
                                :actions actions}
               (conj (vec (:interceptors nexus)) handler)

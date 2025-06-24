@@ -848,12 +848,14 @@ Specific arguments passed to the various phase functions:
 ### `:before-dispatch`
 
 - `:system`
+- `:state`
 - `:dispatch-data`
 - `:actions`
 
 ### `:after-dispatch`
 
 - `:system`
+- `:state`
 - `:dispatch-data`
 - `:actions`
 - `:results`
