@@ -2,4 +2,10 @@
 /.cpcache/
 /.lsp/
 /.nrepl-port
+/.shadow-cljs/
+/dev-resources/public/app
+/dev-resources/public/portfolio
 /node_modules/
+/package-lock.json
+/package.json
+/out/

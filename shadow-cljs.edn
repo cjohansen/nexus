@@ -1,0 +1,12 @@
+{:deps {:aliases [:dev]}
+ :dev-http {9191 ["dev-resources/public" "classpath:public"]}
+ :builds
+ {:portfolio
+  {:target :browser
+   :modules {:main {:init-fn nexus.portfolio.scenes/main}}
+   :dev {:output-dir "dev-resources/public/portfolio"}}
+
+  :sample
+  {:target :browser
+   :modules {:main {:init-fn nexus.dev/main}}
+   :dev {:output-dir "dev-resources/public/app"}}}}
