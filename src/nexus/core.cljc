@@ -39,11 +39,11 @@
   (assoc ctx :actions (apply f (:state ctx) (next (:action ctx)))))
 
 (defn ^:no-doc expand-action [nexus state [kind :as action] errors]
-  (if-let [f (get-in nexus [:actions kind])]
+  (if-let [f (get-in nexus [:nexus/actions kind])]
     (let [{:keys [action actions errors]}
           (run-interceptors (cond-> {:state state :action action}
                               errors (assoc :errors errors))
-            (conj (vec (:interceptors nexus))
+            (conj (vec (:nexus/interceptors nexus))
                   {:phase :expand-action
                    :before-action (partial wrap-action-handler f)})
             [:before-action :after-action :action])
@@ -89,7 +89,7 @@
   the value of calling the corresponding function with `dispatch-data`. Returns
   interpolated `actions`."
   {:arglists '[[nexus dispatch-data actions]]}
-  [{:keys [placeholders]} dispatch-data actions]
+  [{:nexus/keys [placeholders]} dispatch-data actions]
   (mapv
    #(let [interpolated
           (walk/postwalk
@@ -104,7 +104,7 @@
    actions))
 
 (defn ^:no-doc get-batched-effects [nexus]
-  (->> (:effects nexus)
+  (->> (:nexus/effects nexus)
        (filter (comp :nexus/batch meta val))
        (mapv key)
        set))
@@ -120,11 +120,11 @@
                          (next (:effect ctx)))))
 
 (defn ^:no-doc execute-batch [acc nexus ctx effect-k effects k wrap-handler]
-  (if-let [f (get-in nexus [:effects effect-k])]
+  (if-let [f (get-in nexus [:nexus/effects effect-k])]
     (let [v (cond-> effects
               (= k :effect) first)
           ret (run-interceptors (into (assoc ctx k v) (select-keys acc [:errors]))
-                (conj (vec (:interceptors nexus))
+                (conj (vec (:nexus/interceptors nexus))
                       {:phase :execute-effect
                        :before-effect (partial wrap-handler f)})
                 [:before-effect :after-effect :effect])]
@@ -134,7 +134,7 @@
     (update acc :errors conjv
             {:phase :execute-effect
              :effect-k effect-k
-             :err (ex-info "No such effect" {:available-effects (keys (:effects nexus))})})))
+             :err (ex-info "No such effect" {:available-effects (keys (:nexus/effects nexus))})})))
 
 (defn execute
   "Execute `effects` one by one. Calls every `:before-effect` interceptor before
@@ -151,8 +151,8 @@
                     acc effects))) {})))
 
 (defn ^{:indent 3} dispatch [nexus system dispatch-data actions]
-  (when (:actions nexus)
-    (assert (ifn? (:system->state nexus)) ":system->state must be a function"))
+  (when (:nexus/actions nexus)
+    (assert (ifn? (:nexus/system->state nexus)) ":nexus/system->state must be a function"))
   (let [dispatch!
         (fn dispatch! [actions & [disp-data]]
           (let [handler {:phase :action-dispatch
@@ -167,10 +167,10 @@
                                                         (not= actions effects)
                                                         (interpolate nexus (:dispatch-data ctx))))))))}]
             (run-interceptors {:system system
-                               :state (when-let [system->state (:system->state nexus)]
+                               :state (when-let [system->state (:nexus/system->state nexus)]
                                         (system->state system))
                                :dispatch-data (merge dispatch-data disp-data)
                                :actions actions}
-              (conj (vec (:interceptors nexus)) handler)
+              (conj (vec (:nexus/interceptors nexus)) handler)
               [:before-dispatch :after-dispatch])))]
     (select-keys (dispatch! actions) [:results :errors])))
