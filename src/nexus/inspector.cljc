@@ -195,7 +195,10 @@
       (cond-> (-> (update entry :effects ->actions)
                   (assoc :dispatch-elapsed (round-tenth (- (now-ms) (:dispatch-start entry))))
                   (dissoc :dispatch-start)
-                  (assoc :results (map #(update % :effect ->action) (:results ctx))))
+                  (assoc :results (for [res (:results ctx)]
+                                    (cond-> res
+                                      (:effect res) (update :effect ->action)
+                                      (:effects res) (update :effects ->actions)))))
         (= 1 (count (:errors ctx)))
         (assoc :error (->error (first (:errors ctx))))
 
