@@ -6,14 +6,14 @@
             [nexus.inspector :as inspector]))
 
 (def nexus
-  {:system->state deref
+  {:nexus/system->state deref
 
-   :actions
+   :nexus/actions
    {:actions/inc
     (fn [_ n]
       [[:effects/save [:number] (inc n)]])}
 
-   :effects
+   :nexus/effects
    {:effects/save
     (fn [_ store k v]
       (swap! store assoc k v))
@@ -23,7 +23,7 @@
     (fn [_ store kvs]
       (swap! store #(reduce (fn [s [k v]] (assoc s k v)) % kvs)))}
 
-   :placeholders
+   :nexus/placeholders
    {:secret/number
     (fn [{:keys [num]}]
       num)}})

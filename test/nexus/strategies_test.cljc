@@ -5,9 +5,9 @@
             [nexus.core :as nexus]))
 
 (def nexus
-  {:system->state deref
+  {:nexus/system->state deref
 
-   :actions
+   :nexus/actions
    {:actions/fail
     (fn [_ _]
       (throw (ex-info "Boom!" {})))
@@ -16,7 +16,7 @@
     (fn [_ arg]
       [[:effects/succeed arg]])}
 
-   :effects
+   :nexus/effects
    {:effects/fail
     (fn [_ _ _]
       (throw (ex-info "Boom!" {})))
@@ -28,7 +28,7 @@
 (deftest fail-fast-test
   (testing "Aborts on first action error"
     (is (= (-> nexus
-               (update :interceptors conj strategies/fail-fast)
+               (update :nexus/interceptors conj strategies/fail-fast)
                (nexus/dispatch (atom {}) {}
                    [[:actions/fail 1] ;; Expansion fails
                     [:actions/succeed 2]
@@ -41,7 +41,7 @@
 
   (testing "Aborts on first effect error"
     (is (= (-> nexus
-               (update :interceptors conj strategies/fail-fast)
+               (update :nexus/interceptors conj strategies/fail-fast)
                (nexus/dispatch (atom {}) {}
                    [[:actions/succeed 2]
                     [:effects/fail 3]])

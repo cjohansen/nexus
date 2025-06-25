@@ -119,7 +119,7 @@ To provide implementations to Nexus, add them to the `nexus` map:
 
 ```clj
 (def nexus
-  {:effects
+  {:nexus/effects
    {:task/start-editing
     (fn [_ store task-id]
       (swap! store assoc-in [:tasks task-id :task/editing?] true))}})
@@ -152,7 +152,7 @@ desired status, and either update the task or flag an error:
   (get-in state [:columns status :column/limit]))
 
 (def nexus
-  {:effects
+  {:nexus/effects
    {:task/start-editing
     (fn [_ store task-id]
       (swap! store assoc-in [:tasks task-id :task/editing?] true))
@@ -175,7 +175,7 @@ We will first introduce a low-level effect to update the application state:
 
 ```clj
 (def nexus
-  {:effects
+  {:nexus/effects
    {:effects/save
     (fn [_ store path v]
       (swap! store assoc-in path v))}})
@@ -190,9 +190,9 @@ is an atom, `deref` will do the job just fine:
 
 ```clj
 (def nexus
-  {:system->state deref ;; <==
-   :effects {,,,}
-   :actions             ;; <==
+  {:nexus/system->state deref ;; <==
+   :nexus/effects {,,,}
+   :nexus/actions             ;; <==
    {:task/start-editing
     (fn [state task-id]
       [[:effects/save [:tasks task-id :task/editing?] true]])
@@ -246,10 +246,10 @@ Placeholders are implemented by the keyword:
 
 ```clj
 (def nexus
-  {:system->state deref
-   :effects {,,,}
-   :actions {,,,}
-   :placeholders        ;; <==
+  {:nexus/system->state deref
+   :nexus/effects {,,,}
+   :nexus/actions {,,,}
+   :nexus/placeholders        ;; <==
    {:event.target/value
     (fn [dispatch-data]
       (some-> dispatch-data :dom-event .-target .-value))}})
@@ -285,7 +285,7 @@ aforementioned context map:
 ```clj
 (def nexus
   {,,,
-   :effects
+   :nexus/effects
    {,,,
     :effects/prevent-default
     (fn [{:keys [dispatch-data]} _]
@@ -303,7 +303,7 @@ One way to achieve this is to use another placeholder:
 ```clj
 (def nexus
   {,,,
-   :placeholders
+   :nexus/placeholders
    {,,,
     :clock/now
     (fn [{:keys [now]}]
@@ -318,7 +318,7 @@ Note that you could write this placeholder very succinctly:
 
 ```clj
 (def nexus
-  {:placeholders
+  {:nexus/placeholders
    {:clock/now :now}})
 ```
 
@@ -327,10 +327,10 @@ Another option is to make sure the state always has the current time on it:
 ```clj
 (def nexus
   {,,,
-   :system->state
+   :nexus/system->state
    (fn [store]
      (assoc @store :clock/now (js/Date.)))
-   :actions
+   :nexus/actions
    {:task/edit
     (fn [state task-id data]
       (into [[:effects/save [:tasks task-id :task/updated-at] (:clock/now state)]]
@@ -360,7 +360,7 @@ placeholder function:
 ```clj
 (def nexus
   {,,,
-   :placeholders
+   :nexus/placeholders
    {:event.target/value
     (fn [{:keys [dom-event]}]
       (some-> dom-event .-target .-value))
@@ -381,7 +381,7 @@ receive a collection of action arguments:
 ```clj
 (def nexus
   {,,,
-   :effects
+   :nexus/effects
    {:effects/save
     ^:nexus/batch
     (fn [_ store path-vs]
@@ -405,7 +405,7 @@ Here's an effect to send a command to the server:
 
 ```clj
 (def nexus
-  {:effects
+  {:nexus/effects
    {:effects/command
     (fn [ctx store command]
       (js/fetch "/commands"
@@ -420,7 +420,7 @@ actions with access to the same `nexus`, `system` and `dispatch-data`.
 
 ```clj
 (def nexus
-  {:effects
+  {:nexus/effects
    {:effects/command
     (fn [{:keys [dispatch]} store command]
       (-> (js/fetch "/commands"
@@ -454,7 +454,7 @@ triggered—without writing imperative glue code. The solution: more placeholder
 
 ```clj
 (def nexus
-  {:placeholders
+  {:nexus/placeholders
    {:http.res/header
     (fn [{:keys [response]} header]
       (.get (.-headers response) header))}})
@@ -477,12 +477,12 @@ dispatch data:
 
 ```clj
 (def nexus
-  {:placeholders
+  {:nexus/placeholders
    {:http.res/header
     (fn [{:keys [response]} header]
       (.get (.-headers response) header))}
 
-   :effects
+   :nexus/effects
    {,,,
     :effects/command
     (fn [{:keys [dispatch]} store command {:keys [on-success]}]
@@ -739,13 +739,13 @@ In this case `path-values` would be:
 
 The system contains your live, mutable application state and services. Nexus
 treats this as an opaque value—it never inspects or modifies it. It is passed to
-effects (to perform work) and to your `:system->state` function (to extract pure
-data for action handlers).
+effects (to perform work) and to your `:nexus/system->state` function (to
+extract pure data for action handlers).
 
 ### State
 
-The result of calling `:system->state` on your system. The result is assumed to
-be immutable data.
+The result of calling `:nexus/system->state` on your system. The result is
+assumed to be immutable data.
 
 ### Dispatch data
 
@@ -763,9 +763,10 @@ with the first keyword.
 
 ### `nexus`
 
-A map defining your Nexus system. It includes keys like `:actions`, `:effects`,
-`:placeholders`, `:interceptors`, and `:system->state`. This is the central
-registry passed to `nexus.core/dispatch`.
+A map defining your Nexus system. It includes keys like `:nexus/actions`,
+`:nexus/effects`, `:nexus/placeholders`, `:nexus/interceptors`, and
+`:nexus/system->state`. This is the central registry passed to
+`nexus.core/dispatch`.
 
 When using `nexus.registry`, Nexus maintains this registry for you.
 
@@ -789,9 +790,9 @@ first error:
 (require '[nexus.strategies :as strategies])
 
 (def nexus
-  {:interceptors [strategies/fail-fast]
-   :actions ,,,
-   :effects ,,,})
+  {:nexus/interceptors [strategies/fail-fast]
+   :nexus/actions ,,,
+   :nexus/effects ,,,})
 ```
 
 If you're using the registry:

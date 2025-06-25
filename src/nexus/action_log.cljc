@@ -8,8 +8,8 @@
 
 (defn install-logger [nexus log]
   (-> nexus
-      (update :interceptors vec)
-      (update :interceptors conj (inspector/get-interceptor log))))
+      (update :nexus/interceptors vec)
+      (update :nexus/interceptors conj (inspector/get-interceptor log))))
 
 (defn install-inspector [log & [{:keys [label ns-aliases]}]]
   (add-watch
