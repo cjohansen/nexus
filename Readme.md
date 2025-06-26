@@ -69,7 +69,9 @@ introduction to how it works.
 ;; App state
 (def store (atom {}))
 
-;; Handle user input: register effects, actions and placeholders
+;; Handle user input: register effects, actions and placeholders.
+;; If you don't like registering these globally, the next section
+;; shows how to use nexus.core, which has no implicit state.
 (nxr/register-effect! :effects/save save)
 (nxr/register-action! :actions/inc increment)
 
