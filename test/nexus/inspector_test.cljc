@@ -19,7 +19,7 @@
       (swap! store assoc k v))
 
     :effects/save-batch
-    ^:nexus/batch
+    ^:nexus/batch?
     (fn [_ store kvs]
       (swap! store #(reduce (fn [s [k v]] (assoc s k v)) % kvs)))}
 

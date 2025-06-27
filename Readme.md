@@ -377,7 +377,7 @@ placeholder function:
 `:task/edit` emits multiple `:effects/save` actions. With the current
 implementation, this will cause several calls to `swap!`. If you want action
 dispatch to be atomic, you can _batch_ `:effects/save`. To do this, mark the
-function with `:nexus/batch` meta data, and change its signature. It will now
+function with `:nexus/batch?` meta data, and change its signature. It will now
 receive a collection of action arguments:
 
 ```clj
@@ -385,7 +385,7 @@ receive a collection of action arguments:
   {,,,
    :nexus/effects
    {:effects/save
-    ^:nexus/batch
+    ^:nexus/batch?
     (fn [_ store path-vs]
       (swap! store
        (fn [state]
@@ -566,7 +566,7 @@ placeholders in a global registry:
 (require '[nexus.registry :as nxr])
 
 (nxr/register-effect! :effects/save
-  ^:nexus/batch
+  ^:nexus/batch?
   (fn [_ store path-vs]
     (swap! store
      (fn [state]
@@ -726,7 +726,7 @@ instead:
 [[:effect/save [:number] 3]
  [:effect/save [:name] "Nexus"]]
 
-^:nexus/batch
+^:nexus/batch?
 (fn [ctx system path-values])
 ```
 

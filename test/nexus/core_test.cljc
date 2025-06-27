@@ -279,7 +279,7 @@
 (def nexus-with-batched-save
   {:nexus/effects
    {:effects/save
-    ^:nexus/batch
+    ^:nexus/batch?
     (fn [_ store path-vs]
       (swap! store
              (fn [state]

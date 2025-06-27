@@ -105,7 +105,7 @@
 
 (defn ^:no-doc get-batched-effects [nexus]
   (->> (:nexus/effects nexus)
-       (filter (comp :nexus/batch meta val))
+       (filter (comp :nexus/batch? meta val))
        (mapv key)
        set))
 
