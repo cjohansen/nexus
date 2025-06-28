@@ -8,7 +8,7 @@ side-effects from business logic using declarative actions — making your syste
 easier to test, observe, and extend.
 
 ```clj
-no.cjohansen/nexus {:mvn/version "2025.06.3"}
+no.cjohansen/nexus {:mvn/version "2025.06.4"}
 ```
 
 ## What is it?
