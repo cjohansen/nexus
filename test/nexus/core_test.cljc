@@ -461,4 +461,35 @@
              [:after-effect 1 :effects/save {:number 5, :step-size 3}]
              [:after-dispatch 1 [{:effect [:effects/save [:number] 5
                                            {:on-success [[:effects/save [:second-number] [:dd/k :number]]]}],
-                                  :res {:number 5, :step-size 3}}]]]]))))
+                                  :res {:number 5, :step-size 3}}]]]])))
+
+  (testing "Executes effects as close to dispatch order as possible, allowing batched actions to move up the chain"
+    (is (= (let [log (atom [])]
+             (-> {:nexus/effects
+                  {:effects/save ^:nexus/batch?
+                   (fn [_ _ effect-args]
+                     (doseq [args effect-args]
+                       (swap! log conj (into [:effects/save] args))))
+
+                   :effects/transact ^:nexus/batch?
+                   (fn [_ _ effect-args]
+                     (doseq [args effect-args]
+                       (swap! log conj (into [:effects/transact] args))))
+
+                   :effects/alert
+                   (fn [_ _ text]
+                     (swap! log conj [:effects/alert text]))}}
+                 (nexus/dispatch (atom {}) {}
+                     [[:effects/save :a 1]
+                      [:effects/transact :A 1]
+                      [:effects/alert "First"]
+                      [:effects/save :b 2]
+                      [:effects/alert "Second"]
+                      [:effects/transact :B 2]]))
+             @log)
+           [[:effects/save :a 1]
+            [:effects/save :b 2]
+            [:effects/transact :A 1]
+            [:effects/transact :B 2]
+            [:effects/alert "First"]
+            [:effects/alert "Second"]]))))
