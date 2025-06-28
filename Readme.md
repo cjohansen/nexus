@@ -552,6 +552,11 @@ Nexus' custom action panel like so:
 
 ...and use the returned `nexus` with `nexus/dispatch`.
 
+<div align="center">
+  <img src="doc/action-log.png" alt="Actions in the Dataspex action log" width="48%">
+  <img src="doc/action-details.png" alt="Details about one dispatched action"  width="48%">
+</div>
+
 <a id="convenience"></a>
 ## Give me convenience, or give me death
 
