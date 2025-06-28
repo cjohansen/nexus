@@ -2,6 +2,7 @@
   (:require [clojure.walk :as walk]))
 
 (def ^:private conjv (fnil conj []))
+(def ^:private intov (fnil into []))
 
 (defn action? [data]
   (and (vector? data) (keyword? (first data))))
@@ -66,8 +67,8 @@
         (reduce (fn [res action]
                   (let [{:keys [errors actions]} (expand-action nexus state action (:errors res))]
                     (cond-> res
-                      (seq errors) (update :errors into errors)
-                      (seq actions) (update :actions into actions))))
+                      (seq errors) (update :errors intov errors)
+                      (seq actions) (update :actions intov actions))))
                 acc actions)))
     {:actions [action]}))
 
@@ -80,7 +81,7 @@
   (reduce (fn [res action]
             (let [{:keys [actions errors]} (expand-action nexus state action (:errors res))]
               (cond-> res
-                (seq actions) (update :effects into actions)
+                (seq actions) (update :effects intov actions)
                 (seq errors) (assoc :errors errors))))
           {} actions))
 
