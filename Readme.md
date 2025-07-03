@@ -91,10 +91,6 @@ introduction to how it works.
 ## Getting started
 
 Nexus *actions* are data structures that describe what your system should do.
-Actions are processed as effects—functions that perform side-effects. Actions
-originate from user events, timers, network responses or other sources.
-
-Nexus *actions* are data structures that describe what your system should do.
 They're processed as effects—functions that perform side-effects. Actions can
 originate from user events, timers, network responses, or other sources.
 
