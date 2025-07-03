@@ -3,33 +3,27 @@
 >*noun*<br>
 >a means of connection; tie; link.
 
-A small, zero-dependency library for data-driven dispatch that separates
-side-effects from business logic using declarative actions — making your systems
-easier to test, observe, and extend.
+The UI is a pure function of application state — but event handling can be
+messy. It doesn’t have to be. Good event handling is declarative, minimal, and
+keeps side-effects well contained.
+
+Nexus is a small, zero-dependency library for dispatching **actions** — data
+describing what should happen — with mostly pure functions.
 
 ```clj
 no.cjohansen/nexus {:mvn/version "2025.07.1"}
 ```
 
-## What is it?
-
-UIs have two essential components: rendering and actions. The rendering step
-turns application state into an updated user interface. Actions trigger
-side-effects (networking, local storage, web workers, etc) and update
-application state—which in turn causes a re-render.
-
 [Replicant](https://replicant.fun) provides a data-driven and functional
 solution to rendering. By making event handlers representable as data, it
 provides you with just enough infrastructure to build a declarative action
-dispatch system.
-
-Nexus is designed to be that system.
+dispatch system. Nexus is designed to be that system.
 
 ## Table of contents
 
-- [What's it look like?](#first-example)
+- [Nexus at a glance](#first-example)
 - [Getting started](#getting-started)
-- [Devtooling](#devtooling)
+- [Development tooling](#dev-tooling)
 - [Convenience API](#convenience)
 - [Rationale](#rationale)
 - [Nomenclature](#nomenclature)
@@ -37,7 +31,7 @@ Nexus is designed to be that system.
 - [Interceptors](#interceptors)
 
 <a id="first-example"></a>
-## What's it look like?
+## Nexus at a glance
 
 Here's a compact showcase of using Nexus with Replicant. Read on for a detailed
 introduction to how it works.
@@ -96,13 +90,15 @@ introduction to how it works.
 <a id="getting-started"></a>
 ## Getting started
 
-Nexus is built around *actions*—data structures that describe what your system
-should do. These actions are later processed as *effects*—functions that perform
-side-effects. Actions typically originate from user events, but they can also
-come from timers, network responses, or other sources.
+Nexus *actions* are data structures that describe what your system should do.
+Actions are processed as effects—functions that perform side-effects. Actions
+originate from user events, timers, network responses or other sources.
 
-An action is represented as a vector of an action type (keyword) and optional
-arguments:
+Nexus *actions* are data structures that describe what your system should do.
+They're processed as effects—functions that perform side-effects. Actions can
+originate from user events, timers, network responses, or other sources.
+
+Actions are vectors of an action type (keyword) and optional arguments:
 
 ```clj
 [:task/set-status "tid33" :status/in-progress]
@@ -117,7 +113,7 @@ dispatching actions. In this example we'll use an atom, called the `store`.
 
 ### Implementing an effect
 
-To provide implementations to Nexus, add them to the `nexus` map:
+Put action implementations in your `nexus` map:
 
 ```clj
 (def nexus
@@ -169,7 +165,7 @@ desired status, and either update the task or flag an error:
 
 Holy swap, Batman! That's a lot of side-effects in one place. Our goal is to
 isolate logic in pure functions, so we can test, reuse, and compose behavior
-without changing the world. Let's tease the logic apart from the side-effects.
+without changing the world. Let's fix that.
 
 ### Pure actions
 
@@ -534,7 +530,8 @@ one-liner:
 `set-dispatch!` calls its function with a map that contains, among other things,
 the DOM event under the key `:replicant/dom-event`.
 
-## Devtooling
+<a id="dev-tooling"></a>
+## Development tooling
 
 > ...if only you could see what I've seen with your eyes
 
