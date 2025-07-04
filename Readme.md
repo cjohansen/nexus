@@ -177,7 +177,7 @@ We will first introduce a low-level effect to update the application state:
 
 Our two actions can now be expressed in terms of this one effect. We do that by
 implementing them as _actions_ instead of _effects_. Actions are pure functions
-that return lists of actions — transforming intent into more low-level
+that return lists of effects — transforming intent into more low-level
 implementations. They're called with an immutable snapshot of your system. This
 means we need to tell Nexus how to acquire the system snapshot. Since our system
 is an atom, `deref` will do the job just fine:
