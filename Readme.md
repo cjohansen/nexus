@@ -926,6 +926,10 @@ effects:
 
 You can also register interceptors with `nexus.registry/register-interceptor!`.
 
+## Nexus in the wild
+
+**Ring middleware:** [ring-nexus-middleware](https://github.com/ovistoica/ring-nexus-middleware) applies Nexus to Ring handlers for clean, testable web applications.
+
 ## Acknowledgments
 
 Designed by [Magnar Sveen](https://magnars.com) ([@magnars](https://github.com/magnars)),
