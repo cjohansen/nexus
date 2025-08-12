@@ -915,22 +915,36 @@ effects:
 (def logger
   {:id :logger
 
+   :before-action
+   (fn [{:keys [action] :as ctx}]
+     (println "Expanding action:\n" (pr-str action))
+     ctx)
+
+   :after-action
+   (fn [{:keys [errors] :as ctx}]
+     (when (seq errors)
+       (println "⚠️ Error while expanding action!")
+       (prn errors))
+     ctx)
+
    :before-effect
-   (fn [{:keys [effect]}]
-     (println "Handling effect:" (pr-str effect))
+   (fn [{:keys [effect effects] :as ctx}]
+     (if effect
+       (println "Executing effect:\n" (pr-str effect))
+       (println "Executing batched effects:\n" (pr-str effects)))
      ctx)
 
    :after-effect
-   (fn [{:keys [effect errors]}]
-     (if (seq errors)
-       (println "⚠️  Errors while handling" (pr-str effect) ":" (pr-str errors))
-       (println "✓ Successfully handled" (pr-str effect)))
+   (fn [{:keys [errors] :as ctx}]
+     (when (seq errors)
+       (println "⚠️ Error while executing effect!")
+       (prn errors))
      ctx)})
 
 (def nexus
-  {:interceptors [logger]
-   :actions ,,,
-   :effects ,,,})
+  {:nexus/interceptors [logger]
+   :nexus/actions ,,,
+   :nexus/effects ,,,})
 ```
 
 You can also register interceptors with `nexus.registry/register-interceptor!`.
