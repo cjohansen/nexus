@@ -929,6 +929,7 @@ You can also register interceptors with `nexus.registry/register-interceptor!`.
 ## Nexus in the wild
 
 **Ring middleware:** [ring-nexus-middleware](https://github.com/ovistoica/ring-nexus-middleware) applies Nexus to Ring handlers for clean, testable web applications.
+**Datastar:** [datastar.wow](https://github.com/brianium/datastar.wow) uses Nexus to create extensible, testable, and data-oriented real-time applications via [Datastar](https://data-star.dev/).
 
 ## Acknowledgments
 
