@@ -538,7 +538,7 @@ Nexus' custom action panel like so:
 (require '[nexus.action-log :as action-log])
 
 (defn inspect-actions [nexus]
-  (let [log (action-log/start)]
+  (let [log (action-log/create-log)]
     (action-log/install-inspector log)
     (action-log/install-logger nexus log)))
 ```
