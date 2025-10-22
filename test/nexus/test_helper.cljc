@@ -23,4 +23,6 @@
           (ex-data e))})
 
 (defn datafy-errors [res]
-  (update res :errors (fn [errors] (mapv #(update % :err ex->data) errors))))
+  (-> res
+      (select-keys [:effects :errors])
+      (update :errors (fn [errors] (mapv #(update % :err ex->data) errors)))))

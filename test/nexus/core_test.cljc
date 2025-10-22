@@ -127,8 +127,9 @@
   (testing "Calls before-interceptor before action handler"
     (is (= (-> (with-interceptor nexus-with-inc :before-action
                  #(assoc-in % [:state :base-n] 2))
-               (nexus/expand-actions {} [[:actions/inc 9]]))
-           {:effects [[:effects/save [:number] 12]]})))
+               (nexus/expand-actions {} [[:actions/inc 9]])
+               :effects)
+           [[:effects/save [:number] 12]])))
 
   (testing "Calls after-interceptor after action handler"
     (is (= (let [log (atom [])]
@@ -433,6 +434,7 @@
                  log (atom [])]
              (-> {:nexus/system->state deref
                   :nexus/placeholders {:dd/k (fn [dispatch-data k]
+                                               (prn dispatch-data k)
                                                (if (contains? dispatch-data k)
                                                  (k dispatch-data)
                                                  [:dd/k k]))}
@@ -492,4 +494,42 @@
             [:effects/transact :A 1]
             [:effects/transact :B 2]
             [:effects/alert "First"]
-            [:effects/alert "Second"]]))))
+            [:effects/alert "Second"]])))
+
+  (testing "Interpolates actions in between expansions"
+    (is (= (->> (let [log (atom [])]
+                  (-> {:nexus/system->state deref
+
+                       :nexus/placeholders
+                       {:rnd/gen-id (fn [_] (random-uuid))}
+
+                       :nexus/actions
+                       {:actions/create-new-thing
+                        (fn [_ title]
+                          [[:actions/create-thing [:rnd/gen-id] title]])
+
+                        :actions/create-thing
+                        (fn [_ id title]
+                          [[:actions/save-thing id title]
+                           [:actions/record-meta id "Created"]])
+
+                        :actions/save-thing
+                        (fn [_ id title]
+                          [[:effects/save id title]])
+
+                        :actions/record-meta
+                        (fn [_ id data]
+                          [[:effects/save id data]])}
+
+                       :nexus/effects
+                       {:effects/save ^:nexus/batch
+                        (fn [_ _ effect-args]
+                          (doseq [args effect-args]
+                            (swap! log conj (into [:effects/save] args))))}}
+                      (nexus/dispatch (atom {}) {}
+                          [[:actions/create-new-thing "A thing!"]]))
+                  @log)
+                (map second)
+                set
+                count)
+           1))))

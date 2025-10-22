@@ -39,70 +39,72 @@
 (defn ^:no-doc wrap-action-handler [f ctx]
   (assoc ctx :actions (apply f (:state ctx) (next (:action ctx)))))
 
-(defn ^:no-doc expand-action [nexus state [kind :as action] errors]
-  (if-let [f (get-in nexus [:nexus/actions kind])]
-    (let [{:keys [action actions errors]}
-          (run-interceptors (cond-> {:state state :action action}
-                              errors (assoc :errors errors))
-            (conj (vec (:nexus/interceptors nexus))
-                  {:phase :expand-action
-                   :before-action (partial wrap-action-handler f)})
-            [:before-action :after-action :action])
-          acc (cond-> {}
-                (seq errors) (assoc :errors errors))]
-      (cond
-        (nil? actions) acc
+(defn interpolate-1 [{:nexus/keys [placeholders]} dispatch-data action]
+  (let [interpolated
+        (walk/postwalk
+         (fn [x]
+           (if-let [f (when (vector? x)
+                        (get placeholders (first x)))]
+             (apply f dispatch-data (next x))
+             x))
+         action)]
+    (cond-> interpolated
+      (not= interpolated action) (with-meta {:nexus/action action}))))
 
-        (not (actions? actions))
-        {:errors [{:action action
-                   :phase :expand-action
-                   :err (ex-info (str (first action) " should expand to a collection of actions")
-                                 {:res actions})}]}
+(defn ^:no-doc expand-action [nexus state [kind :as action] {:keys [dispatch-data errors]}]
+  (let [action (interpolate-1 nexus dispatch-data action)]
+    (if-let [f (get-in nexus [:nexus/actions kind])]
+      (let [{:keys [action actions errors]}
+            (run-interceptors (cond-> {:state state :action action}
+                                errors (assoc :errors errors))
+              (conj (vec (:nexus/interceptors nexus))
+                    {:phase :expand-action
+                     :before-action (partial wrap-action-handler f)})
+              [:before-action :after-action :action])
+            acc (cond-> {}
+                  (seq errors) (assoc :errors errors))]
+        (cond
+          (nil? actions) acc
 
-        (= actions [action])
-        (cond-> acc
-          (seq actions) (assoc :actions actions))
+          (not (actions? actions))
+          {:errors [{:action action
+                     :phase :expand-action
+                     :err (ex-info (str (first action) " should expand to a collection of actions")
+                                   {:res actions})}]}
 
-        :else
-        (reduce (fn [res action]
-                  (let [{:keys [errors actions]} (expand-action nexus state action (:errors res))]
-                    (cond-> res
-                      (seq errors) (update :errors intov errors)
-                      (seq actions) (update :actions intov actions))))
-                acc actions)))
-    {:actions [action]}))
+          (= actions [action])
+          (cond-> acc
+            (seq actions) (assoc :actions actions))
+
+          :else
+          (reduce (fn [res action]
+                    (let [{:keys [errors actions]} (expand-action nexus state action (:errors res))]
+                      (cond-> res
+                        (seq errors) (update :errors intov errors)
+                        (seq actions) (update :actions intov actions))))
+                  acc actions)))
+      {:actions [action]})))
 
 (defn expand-actions
   "Loops over `actions`, and expands each action to a list of actions with
   available implementations in `nexus`. Passes `state` to each implementation.
   Calls every available `:before-action` interceptor before expanding and every
   `:after-action` interceptor after. Returns a map of `{:effects :errors}`."
-  [nexus state actions]
+  [nexus state actions & [dispatch-data]]
   (reduce (fn [res action]
-            (let [{:keys [actions errors]} (expand-action nexus state action (:errors res))]
+            (let [{:keys [actions errors]} (expand-action nexus state action res)]
               (cond-> res
                 (seq actions) (update :effects intov actions)
                 (seq errors) (assoc :errors errors))))
-          {} actions))
+          {:dispatch-data dispatch-data} actions))
 
 (defn interpolate
   "Walks `actions`, and replaces any forms matching a registered placeholder with
   the value of calling the corresponding function with `dispatch-data`. Returns
   interpolated `actions`."
   {:arglists '[[nexus dispatch-data actions]]}
-  [{:nexus/keys [placeholders]} dispatch-data actions]
-  (mapv
-   #(let [interpolated
-          (walk/postwalk
-           (fn [x]
-             (if-let [f (when (vector? x)
-                          (get placeholders (first x)))]
-               (apply f dispatch-data (next x))
-               x))
-           %)]
-      (cond-> interpolated
-        (not= interpolated %) (with-meta {:nexus/action %})))
-   actions))
+  [nexus dispatch-data actions]
+  (mapv #(interpolate-1 nexus dispatch-data %) actions))
 
 (defn ^:no-doc get-batched-effects [nexus]
   (->> (:nexus/effects nexus)
@@ -159,8 +161,8 @@
           (let [handler {:phase :action-dispatch
                          :before-dispatch
                          (fn [ctx]
-                           (let [actions (interpolate nexus (:dispatch-data ctx) (:actions ctx))
-                                 {:keys [effects errors]} (expand-actions nexus (:state ctx) actions)]
+                           (let [;;actions (interpolate nexus (:dispatch-data ctx) (:actions ctx))
+                                 {:keys [effects errors]} (expand-actions nexus (:state ctx) (:actions ctx) (:dispatch-data ctx))]
                              (cond-> ctx
                                errors (assoc :errors errors)
                                effects (into (execute nexus (assoc (dissoc ctx :actions) :dispatch dispatch!)
