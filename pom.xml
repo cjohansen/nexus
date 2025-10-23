@@ -4,7 +4,7 @@
   <packaging>jar</packaging>
   <groupId>no.cjohansen</groupId>
   <artifactId>nexus</artifactId>
-  <version>2025.10.1</version>
+  <version>2025.10.2</version>
   <name>nexus</name>
   <description>Data-driven action dispatch for the UI: Build systems that are easier to test, observe, and extend.</description>
   <url>https://github.com/cjohansen/nexus</url>
