@@ -193,8 +193,8 @@ is an atom, `deref` will do the job just fine:
 
     :task/set-status
     (fn [state task-id status]
-      (if (< (count (get-tasks-by-status @store status))
-             (get-status-limit @store status))
+      (if (< (count (get-tasks-by-status state status))
+             (get-status-limit state status))
         [[:effects/save [:tasks task-id :task/status] status]]
         [[:effects/save [:errors] [:errors/at-limit status]]]))}})
 ```
