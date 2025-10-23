@@ -78,7 +78,8 @@
 
           :else
           (reduce (fn [res action]
-                    (let [{:keys [errors actions]} (expand-action nexus state action (:errors res))]
+                    (let [{:keys [errors actions]} (expand-action nexus state action {:dispatch-data dispatch-data
+                                                                                      :errors (:errors res)})]
                       (cond-> res
                         (seq errors) (update :errors intov errors)
                         (seq actions) (update :actions intov actions))))
