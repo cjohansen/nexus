@@ -11,7 +11,7 @@ Nexus is a small, zero-dependency library for dispatching **actions** — data
 describing what should happen — with mostly pure functions.
 
 ```clj
-no.cjohansen/nexus {:mvn/version "2025.07.1"}
+no.cjohansen/nexus {:mvn/version "2025.10.1"}
 ```
 
 [Replicant](https://replicant.fun) provides a data-driven and functional
@@ -936,6 +936,12 @@ You can also register interceptors with `nexus.registry/register-interceptor!`.
 Designed by [Magnar Sveen](https://magnars.com) ([@magnars](https://github.com/magnars)),
 [Christian Johansen](https://cjohansen.no) ([@cjohansen](https://github.com/cjohansen)), and
 [Teodor Heggelund](https://play.teod.eu/) ([@teodorlu](https://github.com/teodorlu)).
+
+## Changelog
+
+### 2025.10.1
+
+Interpolate placeholders in between each action expansion.
 
 ## License: MIT
 
