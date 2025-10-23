@@ -161,8 +161,7 @@
           (let [handler {:phase :action-dispatch
                          :before-dispatch
                          (fn [ctx]
-                           (let [;;actions (interpolate nexus (:dispatch-data ctx) (:actions ctx))
-                                 {:keys [effects errors]} (expand-actions nexus (:state ctx) (:actions ctx) (:dispatch-data ctx))]
+                           (let [{:keys [effects errors]} (expand-actions nexus (:state ctx) (:actions ctx) (:dispatch-data ctx))]
                              (cond-> ctx
                                errors (assoc :errors errors)
                                effects (into (execute nexus (assoc (dissoc ctx :actions) :dispatch dispatch!)
