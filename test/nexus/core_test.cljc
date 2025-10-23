@@ -112,6 +112,20 @@
                :effects)
            [[:actions/store "n" 3]])))
 
+  (testing "Interpolates placeholders in expanded actions"
+    (is (= (-> {:nexus/actions
+                {:actions/inc
+                 (fn [_ n]
+                   [[:actions/plus n [:placeholders/one]]])
+                 :actions/plus
+                 (fn [_ a b]
+                   [[:actions/store "n" (+ a b)]])}
+                :nexus/placeholders
+                {:placeholders/one (fn [dispatch-data] (:one dispatch-data))}}
+               (nexus/expand-actions {} [[:actions/inc 2]] {:one 1})
+               :effects)
+           [[:actions/store "n" 3]])))
+
   (testing "Returns errors from bad action handler"
     (is (= (-> {:nexus/actions
                 {:actions/inc
