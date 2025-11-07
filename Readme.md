@@ -444,14 +444,23 @@ to make this decision when issuing the command:
 ```
 
 Once again, we want to refer to a value that’s only available when the action is
-triggered—without writing imperative glue code. The solution: more placeholders.
+triggered—without writing imperative glue code. Unfortunately we can't just
+stick a placeholder here, as it would resolved immediately upon dispatching
+`:effects/command` -- there is no way for Nexus to know that `:on-success`
+describes something that should happen later.
+
+This problem needs a custom solution in your app. One possibly solution is to
+use a placeholder anyway, and implement it such that it preserves the
+placeholder when there is not yet a value to replace it with:
 
 ```clj
 (def nexus
   {:nexus/placeholders
    {:http.res/header
     (fn [{:keys [response]} header]
-      (.get (.-headers response) header))}})
+      (if response
+        (.get (.-headers response) header)
+        [:http.res/header header]))}})
 ```
 
 We can use the placeholder in the `:on-success` actions:
