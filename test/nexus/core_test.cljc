@@ -301,7 +301,6 @@
                (reduce (fn [s [p v]] (assoc-in s p v)) state path-vs))))}})
 
 (deftest execute-test
-
   (testing "Fails when there is no implementation"
     (is (= (-> (nexus/execute {} {:system (atom {})} [[:effects/save [:number] 3]])
                h/datafy-errors)
