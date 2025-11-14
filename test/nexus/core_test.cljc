@@ -423,20 +423,26 @@
                       :phase  :execute-effect}]})))
 
   (testing "Returns errors from effect that is dispatched from effect"
-    (is (= (-> {:nexus/system->state deref
-                :nexus/effects
-                {:effects/fail
-                 (fn [_ _]
-                   (throw (ex-info "Boom!" {})))
-                 :effects/dispatch-fail
-                 (fn [{:keys [dispatch]} _]
-                   (dispatch [[:effects/fail]]))}}
-               (nexus/dispatch (atom nil) {} [[:effects/dispatch-fail]])
-               h/datafy-errors)
-           {:errors [{:effect [:effects/fail]
-                      :err    {:data    {}
-                               :message "Boom!"}
-                      :phase  :execute-effect}]})))
+    (let [provided-dispatch-res (atom nil)
+          expected-errors       {:errors [{:effect [:effects/fail]
+                                           :err    {:data    {}
+                                                    :message "Boom!"}
+                                           :phase  :execute-effect}]}]
+      (is (= (-> {:nexus/system->state deref
+                  :nexus/effects
+                  {:effects/fail
+                   (fn [_ _]
+                     (throw (ex-info "Boom!" {})))
+                   :effects/dispatch-fail
+                   (fn [{:keys [dispatch]} _]
+                     (reset! provided-dispatch-res
+                             (dispatch [[:effects/fail]])))}}
+                 (nexus/dispatch (atom nil) {} [[:effects/dispatch-fail]])
+                 h/datafy-errors)
+             expected-errors))
+      (is (= @provided-dispatch-res
+             expected-errors)
+          "provided dispatch returns errors on the same format")))
 
   (testing "Runs interceptors in order"
     (is (= (let [store (atom {:step-size 3})
