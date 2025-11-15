@@ -440,7 +440,7 @@
                  (nexus/dispatch (atom nil) {} [[:effects/dispatch-fail]])
                  h/datafy-errors)
              expected-errors))
-      (is (= @provided-dispatch-res
+      (is (= (h/datafy-errors @provided-dispatch-res)
              expected-errors)
           "provided dispatch returns errors on the same format")))
 

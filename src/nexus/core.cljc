@@ -165,7 +165,9 @@
                            (let [{:keys [effects errors]} (expand-actions nexus (:state ctx) (:actions ctx) (:dispatch-data ctx))
                                  !nested-errors (atom nil)
                                  dispatch!* (fn [& args]
-                                              (reset! !nested-errors (:errors (apply dispatch! args))))]
+                                              (let [res (apply dispatch! args)]
+                                                (reset! !nested-errors (:errors res))
+                                                (select-keys res [:results :errors])))]
                              (cond-> ctx
                                errors (assoc :errors errors)
                                effects (into (execute nexus (assoc (dissoc ctx :actions) :dispatch dispatch!*)
