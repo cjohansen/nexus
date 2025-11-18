@@ -11,7 +11,7 @@ Nexus is a small, zero-dependency library for dispatching **actions** — data
 describing what should happen — with mostly pure functions.
 
 ```clj
-no.cjohansen/nexus {:mvn/version "2025.10.2"}
+no.cjohansen/nexus {:mvn/version "2025.11.1"}
 ```
 
 [Replicant](https://replicant.fun) provides a data-driven and functional
@@ -947,6 +947,12 @@ Designed by [Magnar Sveen](https://magnars.com) ([@magnars](https://github.com/m
 [Teodor Heggelund](https://play.teod.eu/) ([@teodorlu](https://github.com/teodorlu)).
 
 ## Changelog
+
+### 2025.11.1
+
+Fix a bug where nested calls to `dispatch` would swallow errors. Synchronous
+errors are now propagated to the root call. Thanks [Martin
+Solli](https://github.com/msolli)!
 
 ### 2025.10.2
 
