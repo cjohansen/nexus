@@ -162,13 +162,19 @@
           (let [handler {:phase :action-dispatch
                          :before-dispatch
                          (fn [ctx]
-                           (let [{:keys [effects errors]} (expand-actions nexus (:state ctx) (:actions ctx) (:dispatch-data ctx))]
+                           (let [{:keys [effects errors]} (expand-actions nexus (:state ctx) (:actions ctx) (:dispatch-data ctx))
+                                 !nested-errors (atom nil)
+                                 dispatch!* (fn [& args]
+                                              (let [res (apply dispatch! args)]
+                                                (reset! !nested-errors (:errors res))
+                                                (select-keys res [:results :errors])))]
                              (cond-> ctx
                                errors (assoc :errors errors)
-                               effects (into (execute nexus (assoc (dissoc ctx :actions) :dispatch dispatch!)
+                               effects (into (execute nexus (assoc (dissoc ctx :actions) :dispatch dispatch!*)
                                                       (cond->> effects
                                                         (not= actions effects)
-                                                        (interpolate nexus (:dispatch-data ctx))))))))}]
+                                                        (interpolate nexus (:dispatch-data ctx)))))
+                               @!nested-errors (update :errors into @!nested-errors))))}]
             (run-interceptors {:system system
                                :state (when-let [system->state (:nexus/system->state nexus)]
                                         (system->state system))
