@@ -26,3 +26,13 @@
   (-> res
       (select-keys [:effects :errors])
       (update :errors (fn [errors] (mapv #(update % :err ex->data) errors)))))
+
+
+;; Interceptor to verify action expansion and effect execution order for default and serial dispatch strategies
+(defonce !dispatch-history (atom []))
+
+(def dispatch-order-interceptor
+  {:id ::dispatch-order
+   :before-dispatch (fn [{:keys [actions] :as ctx}] (reset! !dispatch-history [[:dispatch actions]]) ctx)
+   :before-action (fn [{:keys [action] :as ctx}] (swap! !dispatch-history conj [:expand-action action]) ctx)
+   :before-effect (fn [{:keys [effect] :as ctx}]  (swap! !dispatch-history conj [:exec-effect effect]))})
