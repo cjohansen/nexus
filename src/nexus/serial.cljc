@@ -5,12 +5,13 @@
 
 
 ;;=== Dataspex integration
-;; This allows the dataspex action log to be enabled at runtime via the js console
-;; Just `nexus.serial.enable-dataspex()`
+;; This is intended to allows the dataspex action log to be enabled at runtime via the js console
+;; It's NOT exported here -- the decision belongs in userland -- but enable-dataspex! can be
+;; called from an exported function in the application namespace
 
 (defonce !dataspex-interceptor (atom nil))
 
-(defn ^:export enable-dataspex []
+(defn enable-dataspex! []
   (when (nil? @!dataspex-interceptor)
     (let [log (nexus.action-log/create-log)]
       (nexus.action-log/install-inspector log)
