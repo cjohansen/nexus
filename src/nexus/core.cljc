@@ -1,8 +1,8 @@
 (ns nexus.core
   (:require [clojure.walk :as walk]))
 
-(def ^:private conjv (fnil conj []))
-(def ^:private intov (fnil into []))
+(def conjv (fnil conj []))
+(def intov (fnil into []))
 
 (defn action? [data]
   (and (vector? data) (keyword? (first data))))
