@@ -39,7 +39,7 @@
    (fn [x]
      (cond-> x
        (and (:data x) (:f x)) :data))
-   data))
+   (:entries data)))
 
 (defn fake-clock []
   (let [now (atom 0)]
@@ -102,3 +102,59 @@
                       [:effects/save-batch [:name] "Nexus"]]
             :expansions [{:action [:effects/save-batch [:number] [:secret/number]]
                           :expansion [:effects/save-batch [:number] 42]}]}))))
+
+(deftest nested-dispatch-corrupts-inspector-log-test
+  (testing "Inspector handles effects that trigger nested dispatch"
+    ;; Bug: when an effect triggers a nested dispatch, subsequent effects from
+    ;; the original dispatch are logged incorrectly.
+    ;;
+    ;; Timeline:
+    ;; 1. Original dispatch starts, before-dispatch creates log entry at index 0
+    ;; 2. First effect runs and calls (:dispatch ctx) triggering nested dispatch
+    ;; 3. Nested dispatch creates log entry at index 1
+    ;; 4. Nested dispatch completes, after-dispatch converts entry 1's :effects
+    ;;    from a vector to an Action record
+    ;; 5. Original dispatch continues with its remaining effects
+    ;; 6. before-effect calls update-current which updates entry at
+    ;;    (dec (count log)) = 1, the WRONG entry
+    ;; 7. conjv on Action record treats effect vector as map entry [key value]
+    ;;
+    ;; Symptoms:
+    ;; - 2+ element effects: silently added as map entry to Action record
+    ;; - 1-element effects: throws IndexOutOfBoundsException (in ClojureScript)
+    (let [test-nexus {:nexus/system->state deref
+                      :nexus/effects
+                      {:effect/trigger-nested
+                       (fn [{:keys [dispatch]} _store]
+                         (dispatch [[:effect/inner]]))
+                       :effect/inner (fn [_ _store])
+                       :effect/outer (fn [_ _store _arg])}}
+          log (action-log/create-log)
+          nexus-with-log (action-log/install-logger test-nexus log)
+          store (atom {})]
+
+      (nexus/dispatch nexus-with-log store {}
+                      [[:effect/trigger-nested]
+                       [:effect/outer :arg1]])
+
+      (let [[first-entry second-entry] (:entries @log)
+            get-effects (fn [entry]
+                          (let [effects (:effects entry)]
+                            (if (and (map? effects) (:data effects))
+                              (:data effects)
+                              effects)))]
+        ;; First entry (original dispatch) should have both effects
+        (is (= [[:effect/trigger-nested] [:effect/outer :arg1]]
+               (get-effects first-entry))
+            "Original dispatch should log both of its effects")
+
+        ;; Second entry (nested dispatch) should only have the inner effect
+        (is (= [[:effect/inner]]
+               (get-effects second-entry))
+            "Nested dispatch should only log its own effect")
+
+        ;; The nested entry's effects should not have extra keys from outer effects
+        (let [second-effects (:effects second-entry)]
+          (when (and (map? second-effects) (:data second-effects))
+            (is (= #{:data :f} (set (keys second-effects)))
+                "Nested dispatch's Action record should not have extra keys")))))))
