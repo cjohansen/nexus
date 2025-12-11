@@ -46,17 +46,24 @@
                     {:id kind
                      :phase :expand-action
                      :before-action (partial nexus/wrap-action-handler handler)})
-             [:before-action :after-action :action])]
-        (cond-> (assoc ctx :actions (intov actions remaining))
+             [:before-action :after-action :action])
+            expansion (intov actions remaining)]
+        (cond-> ctx
           (seq errors) (assoc :errors errors)
-          ;; TODO: Do we want to prevent prefixing the returned actions if they're invalid?
+          (nexus/actions? actions) (assoc :actions expansion
+                                          :effects expansion)
+          ;;FIXME: This syntax is ugly
           (not (nexus/actions? actions))
-          (update-in [:errors] conjv {:action action
-                                      :phase :expand-action
-                                      :err (ex-info (str (first action) " should expand to a collection of actions")
-                                                    {:res actions})})))
+          ((fn [ctx*]
+             (-> ctx*
+                 (assoc :actions remaining)
+                 (update-in [:errors] conjv {:action action
+                                             :phase :expand-action
+                                             :err (ex-info (str (first action) " should expand to a collection of actions")
+                                                           {:res actions})}))))))
       (-> ctx
-          (assoc :actions remaining)
+          (assoc :actions remaining
+                 :effects actions) ;Think dataspex uses this to track incremental expansion...
           (update-in [:errors] conjv
                      {:action action
                       :phase :expand-action
