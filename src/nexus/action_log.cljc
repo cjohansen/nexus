@@ -4,7 +4,8 @@
             [nexus.registry :as nxr]))
 
 (defn create-log []
-  (atom []))
+  (atom {:entries     []
+         :entry-stack []}))
 
 (defn install-logger [nexus log]
   (-> nexus
@@ -15,9 +16,9 @@
   (add-watch
    log ::inspect
    (fn [_ _ _ the-log]
-     (when (contains? (last the-log) :results)
+     (when (contains? (last (:entries the-log)) :results)
        (dataspex/inspect (or label "Actions")
-         (inspector/->LogInspector the-log)
+         (inspector/->LogInspector (:entries the-log))
          (cond-> {:track-changes? false}
            ns-aliases (assoc :ns-aliases ns-aliases)))))))
 
