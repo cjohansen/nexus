@@ -46,17 +46,24 @@
                     {:id kind
                      :phase :expand-action
                      :before-action (partial nexus/wrap-action-handler handler)})
-             [:before-action :after-action :action])]
-        (cond-> (assoc ctx :actions (intov actions remaining))
+             [:before-action :after-action :action])
+            expansion (intov actions remaining)]
+        (cond-> ctx
           (seq errors) (assoc :errors errors)
-          ;; TODO: Do we want to prevent prefixing the returned actions if they're invalid?
+          (nexus/actions? actions) (assoc :actions expansion
+                                          :effects expansion)
+          ;;FIXME: This syntax is ugly
           (not (nexus/actions? actions))
-          (update-in [:errors] conjv {:action action
-                                      :phase :expand-action
-                                      :err (ex-info (str (first action) " should expand to a collection of actions")
-                                                    {:res actions})})))
+          ((fn [ctx*]
+             (-> ctx*
+                 (assoc :actions remaining)
+                 (update-in [:errors] conjv {:action action
+                                             :phase :expand-action
+                                             :err (ex-info (str (first action) " should expand to a collection of actions")
+                                                           {:res actions})}))))))
       (-> ctx
-          (assoc :actions remaining)
+          (assoc :actions remaining
+                 :effects actions) ;Think dataspex uses this to track incremental expansion...
           (update-in [:errors] conjv
                      {:action action
                       :phase :expand-action
@@ -71,18 +78,22 @@
       ctx*
       (recur nexus (expand-first nexus ctx*)))))
 
+(declare dispatch)
+
 (defn dispatch-serially [nexus {:keys [system dispatch-data] :as ctx}]
-    (let [state (apply (:nexus/system->state nexus) [system])
-          {:keys [actions] :as ctx*} (->> (assoc ctx :state state)
-                                          (expand-lazily nexus))]
-      (if (empty? actions)
-        ctx*
-        (->> (assoc ctx* :dispatch (fn [actions & [additional-dispatch-data]]
-                                     (dispatch-serially nexus (assoc ctx
-                                                                     :dispatch-data (merge dispatch-data additional-dispatch-data)
-                                                                     :actions actions))))
-             (execute-first nexus)
-             (recur nexus)))))
+  (let [state (apply (:nexus/system->state nexus) [system])
+
+        dispatch* (fn [actions & [additional-dispatch-data]]
+                    (dispatch nexus system (merge dispatch-data additional-dispatch-data) actions))
+        ctx* (->> (assoc ctx
+                         :state state
+                         :dispatch dispatch*)
+                  (expand-lazily nexus))]
+    (if (empty? (:actions ctx*))
+      ctx*
+      (->> ctx*
+           (execute-first nexus)
+           (recur nexus)))))
 
 (defn as-serial-dispatch-interceptor [nexus]
   {:id ::dispatch
