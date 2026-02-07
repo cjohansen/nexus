@@ -1,7 +1,9 @@
 (ns nexus.serial-test
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [clojure.string :as str]
+            [clojure.test :refer [deftest is testing]]
             [nexus.core :as nexus]
-            [nexus.serial :as serial]))
+            [nexus.serial :as serial]
+            [nexus.test-helper :as h]))
 
 ;; Interceptor to verify action expansion and effect execution order
 ;;... expansion and execution order for last dispatch
@@ -118,3 +120,197 @@
               [:exec-effect [:fx2]]
               [:exec-effect [:fx3]]
               [:exec-effect [:fx4]]])))))
+
+;;Test cases from core here....
+
+(deftest expand-actions-test
+  (testing "Noops without any expansions"
+    (is (= (->> {:actions [[:actions/test :it]]}
+                (serial/expand-lazily {})
+                :effects)
+           [[:actions/test :it]])))
+
+  (testing "Expands action"
+    (is (= (-> {:nexus/actions
+                {:actions/test
+                 (fn [_ arg]
+                   [[:actions/store (str/upper-case arg)]])}}
+               (serial/expand-lazily {:actions [[:actions/test "it"]]})
+               :effects)
+           [[:actions/store "IT"]])))
+
+  (testing "Passes state to action handler"
+    (is (= (-> {:nexus/actions
+                {:actions/test
+                 (fn [state arg]
+                   [[:actions/store (:n (:config state)) arg]])}}
+               (serial/expand-lazily {:state {:config {:n 2}} :actions [[:actions/test "it"]]})
+               :effects)
+           [[:actions/store 2 "it"]])))
+
+  (testing "Returns error when action handler does not return collection of actions"
+    (is (= (-> {:nexus/actions
+                {:actions/test
+                 (fn [{:keys [config]} arg]
+                   [:actions/store (:n config) arg])}}
+               (serial/expand-lazily {:state {:config {:n 2}} :actions [[:actions/test "it"]]})
+               h/datafy-errors)
+           {:errors
+            [{:action [:actions/test "it"]
+              :phase :expand-action
+              :err {:message ":actions/test should expand to a collection of actions"
+                    :data {:res [:actions/store 2 "it"]}}}]})))
+
+  (testing "Expands action to empty list of effects"
+    (is (empty? (-> {:nexus/actions
+                     {:actions/test
+                      (fn [_ _] [])}}
+                    (serial/expand-lazily {:state {:config {:n 2}} :actions [[:actions/test "it"]]})
+                    :effects))))
+
+  (testing "Expands actions recursively"
+    (is (= (-> {:nexus/actions
+                {:actions/inc
+                 (fn [_ n]
+                   [[:actions/plus n 1]])
+                 :actions/plus
+                 (fn [_ a b]
+                   [[:actions/store "n" (+ a b)]])}}
+               (serial/expand-lazily {:actions [[:actions/inc 2]]})
+               :effects)
+           [[:actions/store "n" 3]])))
+
+
+  (testing "Interpolates placeholders in expanded actions"
+    (is (= (-> {:nexus/actions
+                {:actions/inc
+                 (fn [_ n]
+                   [[:actions/plus n [:placeholders/one]]])
+                 :actions/plus
+                 (fn [_ a b]
+                   [[:actions/store "n" (+ a b)]])}
+                :nexus/placeholders
+                {:placeholders/one (fn [dispatch-data] (:one dispatch-data))}}
+               (serial/expand-lazily {:actions [[:actions/inc 2]] :dispatch-data {:one 1}})
+               :effects)
+           [[:actions/store "n" 3]])))
+
+  (testing "Returns errors from bad action handler"
+    (is (= (-> {:nexus/actions
+                {:actions/inc
+                 (fn [_ _]
+                   (throw (ex-info "Boom!" {})))}}
+               (serial/expand-lazily {:actions [[:actions/inc 2]]})
+               h/datafy-errors)
+           {:errors [{:phase :expand-action
+                      :action [:actions/inc 2]
+                      :err {:message "Boom!"
+                            :data {}}}]})))
+
+  #_(testing "Calls before-interceptor before action handler"
+    (is (= (-> (with-interceptor nexus-with-inc :before-action
+                 #(assoc-in % [:state :base-n] 2))
+               (nexus/expand-actions {} [[:actions/inc 9]])
+               :effects)
+           [[:effects/save [:number] 12]])))
+
+  #_(testing "Calls after-interceptor after action handler"
+    (is (= (let [log (atom [])]
+             (-> (with-interceptor nexus-with-inc :after-action
+                   (fn [context]
+                     (swap! log conj {:in (:action context) :out (:actions context)})
+                     context))
+                 (nexus/expand-actions {} [[:actions/inc 9]]))
+             @log)
+           [{:in [:actions/inc 9]
+             :out [[:effects/save [:number] 10]]}])))
+
+  #_(testing "Does not call interceptors for actions that have no handlers"
+    (is (= (let [log (atom [])]
+             (-> {:nexus/interceptors
+                  [{:before-action
+                    (fn [ctx]
+                      (swap! log conj ctx))}]}
+                 (nexus/expand-actions {:state "Here"} [[:actions/inc 2]]))
+             @log)
+           [])))
+
+  #_(testing "Returns error from before-action interceptor"
+    (is (= (-> (with-interceptor nexus-with-inc :before-action
+                 (fn [ctx]
+                   (throw (ex-info "Boom!" {:ctx ctx}))))
+               (nexus/expand-actions {:state "Here"} [[:actions/inc 2]])
+               h/datafy-errors)
+           {:effects [[:effects/save [:number] 3]]
+            :errors
+            [{:phase :before-action
+              :err
+              {:message "Boom!"
+               :data
+               {:ctx
+                {:state {:state "Here"}
+                 :action [:actions/inc 2]
+                 :queue [{:phase :expand-action
+                          :before-action ::h/fn}]
+                 :stack [{:before-action ::h/fn}]}}}
+              :action [:actions/inc 2]}]})))
+
+  #_(testing "Returns error from after-action interceptor"
+    (is (= (-> (with-interceptor nexus-with-inc :after-action
+                 (fn [ctx]
+                   (throw (ex-info "Boom!" {:ctx ctx})))
+                 :logger)
+               (nexus/expand-actions {:state "Here"} [[:actions/inc 2]])
+               h/datafy-errors)
+           {:effects [[:effects/save [:number] 3]]
+            :errors
+            [{:phase :after-action
+              :id :logger
+              :err
+              {:message "Boom!"
+               :data
+               {:ctx
+                {:state {:state "Here"}
+                 :action [:actions/inc 2]
+                 :queue nil
+                 :stack nil
+                 :actions [[:effects/save [:number] 3]]}}}
+              :action [:actions/inc 2]}]})))
+
+  #_(testing "Allows interceptor to abort action expansion flow"
+    (is (= (-> (with-interceptor nexus-with-inc :before-action
+                 #(throw (ex-info "Boom!" {:ctx %}))
+                 :logger)
+               (with-interceptor :before-action
+                   #(cond-> %
+                      (:errors %) (dissoc :queue :stack))
+                 :abort-early)
+               (nexus/expand-actions {:state "Here"} [[:actions/inc 2]])
+               h/datafy-errors
+               (update-in [:errors 0 :err] select-keys [:message]))
+           ;; No effects!
+           {:errors
+            [{:id :logger
+              :phase :before-action
+              :action [:actions/inc 2]
+              :err {:message "Boom!"}}]})))
+
+  #_(testing "Calls interceptors in order"
+    (is (= (let [log (atom [])]
+             (-> {:nexus/actions
+                  {:actions/inc
+                   (fn [state n]
+                     (swap! log conj [:action])
+                     [[:effects/save [:number] (+ (or (:base-n state) 0) n 1)]])}
+                  :nexus/interceptors [(log-interceptor log 1)
+                                       (log-interceptor log 2)
+                                       (log-interceptor log 3)]}
+                 (nexus/expand-actions {} [[:actions/inc 9]]))
+             @log)
+           [[:before-action 1 :actions/inc]
+            [:before-action 2 :actions/inc]
+            [:before-action 3 :actions/inc]
+            [:action]
+            [:after-action 3 :actions/inc [:effects/save]]
+            [:after-action 2 :actions/inc [:effects/save]]
+            [:after-action 1 :actions/inc [:effects/save]]]))))
