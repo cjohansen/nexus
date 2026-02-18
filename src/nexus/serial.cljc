@@ -47,20 +47,18 @@
                      :phase :expand-action
                      :before-action (partial nexus/wrap-action-handler handler)})
              [:before-action :after-action :action])
-            expansion (intov actions remaining)]
+            expansion (intov actions remaining)
+            ok? (or (nil? actions) (nexus/actions? actions))]
         (cond-> ctx
           (seq errors) (assoc :errors errors)
-          (nexus/actions? actions) (assoc :actions expansion
-                                          :effects expansion)
-          ;;FIXME: This syntax is ugly
-          (not (nexus/actions? actions))
-          ((fn [ctx*]
-             (-> ctx*
-                 (assoc :actions remaining)
-                 (update-in [:errors] conjv {:action action
-                                             :phase :expand-action
-                                             :err (ex-info (str (first action) " should expand to a collection of actions")
-                                                           {:res actions})}))))))
+          ok? (assoc :actions expansion
+                     :effects expansion)
+          (not ok?)
+          (-> (assoc :actions remaining)
+              (update-in [:errors] conjv {:action action
+                                          :phase :expand-action
+                                          :err (ex-info (str (first action) " should expand to a collection of actions")
+                                                        {:res actions})}))))
       (-> ctx
           (assoc :actions remaining
                  :effects actions) ;Think dataspex uses this to track incremental expansion...
