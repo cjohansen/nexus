@@ -1,7 +1,6 @@
-(ns nexus.serial
+(ns nexus.serial.dispatch
   (:require [nexus.core :as nexus :refer [intov conjv]]))
 
-;;=== Serial dispatch
 (defn get-effect-interceptor [nexus effect]
   (when-let [handler (get-in nexus [:nexus/effects (first effect)])]
     (let [wrapped-handler (partial nexus/wrap-effect-handler handler)]
@@ -59,7 +58,7 @@
                                                         {:res actions})}))))
       (-> ctx
           (assoc :actions remaining
-                 :effects actions) ;Think dataspex uses this to track incremental expansion...
+                 :effects actions) ;; Think dataspex uses this to track incremental expansion...
           (update-in [:errors] conjv
                      {:action action
                       :phase :expand-action

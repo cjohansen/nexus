@@ -1,8 +1,8 @@
-(ns nexus.serial-test
+(ns nexus.serial.dispatch-test
   (:require [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
             [nexus.core :as nexus]
-            [nexus.serial :as serial]
+            [nexus.serial.dispatch :as serial]
             [nexus.test-helper :as h]))
 
 ;; Interceptor to verify action expansion and effect execution order
