@@ -208,10 +208,11 @@
                    (throw (ex-info "Boom!" {})))}}
                (serial/expand-lazily {:actions [[:actions/inc 2]]})
                h/datafy-errors)
-           {:errors [{:phase :expand-action
-                      :action [:actions/inc 2]
-                      :err {:message "Boom!"
-                            :data {}}}]})))
+           {:errors
+            [{:phase :expand-action
+              :action [:actions/inc 2]
+              :err {:message "Boom!"
+                    :data {}}}]})))
 
   #_(testing "Calls before-interceptor before action handler"
     (is (= (-> (with-interceptor nexus-with-inc :before-action

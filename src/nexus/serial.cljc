@@ -43,16 +43,14 @@
                       :action (nexus/interpolate-1 nexus dispatch-data action)}
                errors (assoc :errors errors))
              (conjv interceptors
-                    {:id kind
-                     :phase :expand-action
+                    {:phase :expand-action
                      :before-action (partial nexus/wrap-action-handler handler)})
              [:before-action :after-action :action])
             expansion (intov actions remaining)
             ok? (or (nil? actions) (nexus/actions? actions))]
         (cond-> ctx
           (seq errors) (assoc :errors errors)
-          ok? (assoc :actions expansion
-                     :effects expansion)
+          ok? (assoc :actions expansion)
           (not ok?)
           (-> (assoc :actions remaining)
               (update-in [:errors] conjv {:action action
