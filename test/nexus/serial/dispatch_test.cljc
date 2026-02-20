@@ -62,31 +62,6 @@
     (fn [state n]
       [[:effects/save [:number] (+ (or (:base-n state) 0) n 1)]])}})
 
-(defn log-interceptor [log n]
-  {:id n
-   :before-action (fn [in]
-                    (swap! log conj [:before-action n (get-in in [:action 0])])
-                    in)
-   :after-action (fn [in]
-                   (swap! log conj (cond-> [:after-action n (get-in in [:action 0])]
-                                     (seq (:actions in)) (conj (mapv first (:actions in)))))
-                   in)
-   :before-effect (fn [in]
-                    (swap! log conj [:before-effect n
-                                     (first (or (:effect in) (first (:effects in))))])
-                    in)
-   :after-effect (fn [in]
-                   (swap! log conj [:after-effect n
-                                    (first (or (:effect in) (first (:effects in))))
-                                    (:res in)])
-                   in)
-   :before-dispatch (fn [in]
-                      (swap! log conj [:before-dispatch n (:actions in)])
-                      in)
-   :after-dispatch (fn [in]
-                     (swap! log conj [:after-dispatch n (:results in)])
-                     in)})
-
 (defn dispatch [actions]
   (serial/dispatch nexus-map {:!store !store} {} actions))
 
@@ -338,9 +313,9 @@
                    (fn [state n]
                      (swap! log conj [:action])
                      [[:effects/save [:number] (+ (or (:base-n state) 0) n 1)]])}
-                  :nexus/interceptors [(log-interceptor log 1)
-                                       (log-interceptor log 2)
-                                       (log-interceptor log 3)]}
+                  :nexus/interceptors [(h/log-interceptor log 1)
+                                       (h/log-interceptor log 2)
+                                       (h/log-interceptor log 3)]}
                  (nexus/expand-actions {} [[:actions/inc 9]]))
              @log)
            [[:before-action 1 :actions/inc]

@@ -30,3 +30,28 @@
 (defn ^{:indent 2} with-interceptor [nexus phase f & [id]]
   (update nexus :nexus/interceptors (fnil conj []) (cond-> {phase f}
                                                      id (assoc :id id))))
+
+(defn log-interceptor [log n]
+  {:id n
+   :before-action (fn [in]
+                    (swap! log conj [:before-action n (get-in in [:action 0])])
+                    in)
+   :after-action (fn [in]
+                   (swap! log conj (cond-> [:after-action n (get-in in [:action 0])]
+                                     (seq (:actions in)) (conj (mapv first (:actions in)))))
+                   in)
+   :before-effect (fn [in]
+                    (swap! log conj [:before-effect n
+                                     (first (or (:effect in) (first (:effects in))))])
+                    in)
+   :after-effect (fn [in]
+                   (swap! log conj [:after-effect n
+                                    (first (or (:effect in) (first (:effects in))))
+                                    (:res in)])
+                   in)
+   :before-dispatch (fn [in]
+                      (swap! log conj [:before-dispatch n (:actions in)])
+                      in)
+   :after-dispatch (fn [in]
+                     (swap! log conj [:after-dispatch n (:results in)])
+                     in)})
