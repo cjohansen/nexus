@@ -80,7 +80,6 @@
 
 (defn dispatch-serially [nexus {:keys [system dispatch-data] :as ctx}]
   (let [state (apply (:nexus/system->state nexus) [system])
-
         dispatch* (fn [actions & [additional-dispatch-data]]
                     (dispatch nexus system (merge dispatch-data additional-dispatch-data) actions))
         ctx* (->> (assoc ctx

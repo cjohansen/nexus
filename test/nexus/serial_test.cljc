@@ -8,6 +8,7 @@
 ;; Interceptor to verify action expansion and effect execution order
 ;;... expansion and execution order for last dispatch
 (defonce !last-dispatch-order (atom []))
+
 ;;... cumulative history over multiple dispatches
 (defonce !dispatch-history (atom []))
 
@@ -27,8 +28,8 @@
                     (swap! !last-dispatch-order conj [:exec-effect effect])
                     ctx)})
 
-
 (def !store (atom {:executions 0}))
+
 (def nexus-map
   {:nexus/system->state (fn [{:keys [!store]}] @!store)
 
@@ -36,9 +37,12 @@
 
    :nexus/placeholders
    {:interpolate/me
-    (fn [_] :interpolated)
+    (fn [_]
+      :interpolated)
+
     :interpolation/order
-    (fn [_] [:interpolated/during (count @!last-dispatch-order) #_(count @!executions)])}
+    (fn [_]
+      [:interpolated/during (count @!last-dispatch-order) #_(count @!executions)])}
 
    :nexus/effects
    {:fx1 (fn [_ctx _sys] nil)
@@ -67,6 +71,7 @@
               [:expand-action [:ax1]]
               [:exec-effect [:fx1]]
               [:exec-effect [:fx2]]]))))
+
   (testing "Should expand actions lazily"
     (let [_result (dispatch [[:ax1] [:ax2]])]
       (is (= @!last-dispatch-order
@@ -86,6 +91,7 @@
               [:exec-effect [:fx2]]
               [:exec-effect [:fx1]]
               [:exec-effect [:fx2]]]))))
+
   (testing "Should expand actions eagerly"
     (let [_result (dispatch-default [[:ax1] [:ax2]])]
       (is (= @!last-dispatch-order
