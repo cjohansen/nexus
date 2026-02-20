@@ -42,7 +42,7 @@
 
     :interpolation/order
     (fn [_]
-      [:interpolated/during (count @!last-dispatch-order) #_(count @!executions)])}
+      [:interpolated/during (count @!last-dispatch-order)])}
 
    :nexus/effects
    {:fx1 (fn [_ctx _sys] nil)
@@ -55,6 +55,37 @@
                               [:fx2]])
     :ax2 (fn [_state & _opts] [[:fx3]
                               [:fx4]])}})
+
+(def nexus-with-inc
+  {:nexus/actions
+   {:actions/inc
+    (fn [state n]
+      [[:effects/save [:number] (+ (or (:base-n state) 0) n 1)]])}})
+
+(defn log-interceptor [log n]
+  {:id n
+   :before-action (fn [in]
+                    (swap! log conj [:before-action n (get-in in [:action 0])])
+                    in)
+   :after-action (fn [in]
+                   (swap! log conj (cond-> [:after-action n (get-in in [:action 0])]
+                                     (seq (:actions in)) (conj (mapv first (:actions in)))))
+                   in)
+   :before-effect (fn [in]
+                    (swap! log conj [:before-effect n
+                                     (first (or (:effect in) (first (:effects in))))])
+                    in)
+   :after-effect (fn [in]
+                   (swap! log conj [:after-effect n
+                                    (first (or (:effect in) (first (:effects in))))
+                                    (:res in)])
+                   in)
+   :before-dispatch (fn [in]
+                      (swap! log conj [:before-dispatch n (:actions in)])
+                      in)
+   :after-dispatch (fn [in]
+                     (swap! log conj [:after-dispatch n (:results in)])
+                     in)})
 
 (defn dispatch [actions]
   (serial/dispatch nexus-map {:!store !store} {} actions))
@@ -102,32 +133,31 @@
               [:exec-effect [:fx3]]
               [:exec-effect [:fx4]]])))))
 
-;; These next two tests are probably redundant
 (deftest serial-interpolation
-  (testing "Should interpolate actions in dispatched order"
-    (let [_result (dispatch [[:ax1 [:interpolation/order]]
-                             [:ax2 [:interpolation/order]]])]
-      (is (= @!last-dispatch-order
-             [[:expand-action [:ax1 [:interpolated/during 0]]]
-              [:exec-effect [:fx1]]
-              [:exec-effect [:fx2]]
-              [:expand-action [:ax2 [:interpolated/during 3]]]
-              [:exec-effect [:fx3]]
-              [:exec-effect [:fx4]]])))))
+  (testing "Interpolates actions in dispatched order"
+    (is (= (do
+             (dispatch [[:ax1 [:interpolation/order]]
+                        [:ax2 [:interpolation/order]]])
+             @!last-dispatch-order)
+           [[:expand-action [:ax1 [:interpolated/during 0]]]
+            [:exec-effect [:fx1]]
+            [:exec-effect [:fx2]]
+            [:expand-action [:ax2 [:interpolated/during 3]]]
+            [:exec-effect [:fx3]]
+            [:exec-effect [:fx4]]]))))
 
 (deftest default-interpolation
   (testing "Should interpolate actions in dispatched order"
-    (let [_result (dispatch-default [[:ax1 [:interpolation/order]]
-                                     [:ax2 [:interpolation/order]]])]
-      (is (= @!last-dispatch-order
-             [[:expand-action [:ax1 [:interpolated/during 0]]]
-              [:expand-action [:ax2 [:interpolated/during 1]]]
-              [:exec-effect [:fx1]]
-              [:exec-effect [:fx2]]
-              [:exec-effect [:fx3]]
-              [:exec-effect [:fx4]]])))))
-
-;;Test cases from core here....
+    (is (= (do
+             (dispatch-default [[:ax1 [:interpolation/order]]
+                                [:ax2 [:interpolation/order]]])
+             @!last-dispatch-order)
+           [[:expand-action [:ax1 [:interpolated/during 0]]]
+            [:expand-action [:ax2 [:interpolated/during 1]]]
+            [:exec-effect [:fx1]]
+            [:exec-effect [:fx2]]
+            [:exec-effect [:fx3]]
+            [:exec-effect [:fx4]]]))))
 
 (deftest expand-actions-test
   (testing "Noops without any expansions"
@@ -186,7 +216,6 @@
                :effects)
            [[:actions/store "n" 3]])))
 
-
   (testing "Interpolates placeholders in expanded actions"
     (is (= (-> {:nexus/actions
                 {:actions/inc
@@ -214,16 +243,16 @@
               :err {:message "Boom!"
                     :data {}}}]})))
 
-  #_(testing "Calls before-interceptor before action handler"
-    (is (= (-> (with-interceptor nexus-with-inc :before-action
+  (testing "Calls before-interceptor before action handler"
+    (is (= (-> (h/with-interceptor nexus-with-inc :before-action
                  #(assoc-in % [:state :base-n] 2))
                (nexus/expand-actions {} [[:actions/inc 9]])
                :effects)
            [[:effects/save [:number] 12]])))
 
-  #_(testing "Calls after-interceptor after action handler"
+  (testing "Calls after-interceptor after action handler"
     (is (= (let [log (atom [])]
-             (-> (with-interceptor nexus-with-inc :after-action
+             (-> (h/with-interceptor nexus-with-inc :after-action
                    (fn [context]
                      (swap! log conj {:in (:action context) :out (:actions context)})
                      context))
@@ -232,7 +261,7 @@
            [{:in [:actions/inc 9]
              :out [[:effects/save [:number] 10]]}])))
 
-  #_(testing "Does not call interceptors for actions that have no handlers"
+  (testing "Does not call interceptors for actions that have no handlers"
     (is (= (let [log (atom [])]
              (-> {:nexus/interceptors
                   [{:before-action
@@ -242,8 +271,8 @@
              @log)
            [])))
 
-  #_(testing "Returns error from before-action interceptor"
-    (is (= (-> (with-interceptor nexus-with-inc :before-action
+  (testing "Returns error from before-action interceptor"
+    (is (= (-> (h/with-interceptor nexus-with-inc :before-action
                  (fn [ctx]
                    (throw (ex-info "Boom!" {:ctx ctx}))))
                (nexus/expand-actions {:state "Here"} [[:actions/inc 2]])
@@ -262,8 +291,8 @@
                  :stack [{:before-action ::h/fn}]}}}
               :action [:actions/inc 2]}]})))
 
-  #_(testing "Returns error from after-action interceptor"
-    (is (= (-> (with-interceptor nexus-with-inc :after-action
+  (testing "Returns error from after-action interceptor"
+    (is (= (-> (h/with-interceptor nexus-with-inc :after-action
                  (fn [ctx]
                    (throw (ex-info "Boom!" {:ctx ctx})))
                  :logger)
@@ -284,11 +313,11 @@
                  :actions [[:effects/save [:number] 3]]}}}
               :action [:actions/inc 2]}]})))
 
-  #_(testing "Allows interceptor to abort action expansion flow"
-    (is (= (-> (with-interceptor nexus-with-inc :before-action
+  (testing "Allows interceptor to abort action expansion flow"
+    (is (= (-> (h/with-interceptor nexus-with-inc :before-action
                  #(throw (ex-info "Boom!" {:ctx %}))
                  :logger)
-               (with-interceptor :before-action
+               (h/with-interceptor :before-action
                    #(cond-> %
                       (:errors %) (dissoc :queue :stack))
                  :abort-early)
@@ -302,7 +331,7 @@
               :action [:actions/inc 2]
               :err {:message "Boom!"}}]})))
 
-  #_(testing "Calls interceptors in order"
+  (testing "Calls interceptors in order"
     (is (= (let [log (atom [])]
              (-> {:nexus/actions
                   {:actions/inc
