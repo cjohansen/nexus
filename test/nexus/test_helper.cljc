@@ -55,3 +55,56 @@
    :after-dispatch (fn [in]
                      (swap! log conj [:after-dispatch n (:results in)])
                      in)})
+
+(defonce !last-dispatch-order (atom []))
+(defonce !dispatch-history (atom []))
+
+(def dispatch-history-interceptor
+  {:id ::dispatch-order
+   :before-dispatch (fn [{:keys [actions] :as ctx}]
+                      (swap! !dispatch-history conj [:dispatch actions])
+                      (reset! !last-dispatch-order [])
+                      ctx)
+   :after-dispatch (fn [ctx]
+                     (swap! !dispatch-history into @!last-dispatch-order)
+                     ctx)
+   :before-action (fn [{:keys [action] :as ctx}]
+                    (swap! !last-dispatch-order conj [:expand-action action])
+                    ctx)
+   :before-effect (fn [{:keys [effect] :as ctx}]
+                    (swap! !last-dispatch-order conj [:exec-effect effect])
+                    ctx)})
+
+(def nexus
+  {:nexus/system->state deref
+
+   :nexus/interceptors [dispatch-history-interceptor]
+
+   :nexus/placeholders
+   {:interpolate/me
+    (fn [_]
+      :interpolated)
+
+    :interpolation/order
+    (fn [_]
+      [:interpolated/during (count @!last-dispatch-order)])}
+
+   :nexus/effects
+   {:fx1 (fn [_ctx _sys] nil)
+    :fx2 (fn [_ctx _sys] nil)
+    :fx3 (fn [_ctx _sys] nil)
+    :fx4 (fn [_ctx _sys] nil)}
+
+   :nexus/actions
+   {:ax1 (fn [_state & _opts]
+           [[:fx1]
+            [:fx2]])
+
+    :ax2 (fn [_state & _opts]
+           [[:fx3]
+            [:fx4]])}})
+
+(defn test-dispatch-order [f actions]
+  (let [!store (atom {:executions 0})]
+    (f nexus !store {} actions)
+    @!last-dispatch-order))

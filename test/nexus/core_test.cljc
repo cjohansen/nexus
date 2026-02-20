@@ -553,3 +553,32 @@
                 set
                 count)
            1))))
+
+(deftest dispatch-order
+  (testing "Expands all actions prior to effect execution"
+    (is (= (h/test-dispatch-order nexus/dispatch [[:fx1] [:fx2] [:ax1]])
+           [[:expand-action [:ax1]]
+            [:exec-effect [:fx1]]
+            [:exec-effect [:fx2]]
+            [:exec-effect [:fx1]]
+            [:exec-effect [:fx2]]])))
+
+  (testing "Expands actions eagerly"
+    (is (= (h/test-dispatch-order nexus/dispatch [[:ax1] [:ax2]])
+           [[:expand-action [:ax1]]
+            [:expand-action [:ax2]]
+            [:exec-effect [:fx1]]
+            [:exec-effect [:fx2]]
+            [:exec-effect [:fx3]]
+            [:exec-effect [:fx4]]]))))
+
+(deftest interpolation-order
+  (testing "Interpolates actions in dispatched order"
+    (is (= (h/test-dispatch-order nexus/dispatch [[:ax1 [:interpolation/order]]
+                                                  [:ax2 [:interpolation/order]]])
+           [[:expand-action [:ax1 [:interpolated/during 0]]]
+            [:expand-action [:ax2 [:interpolated/during 1]]]
+            [:exec-effect [:fx1]]
+            [:exec-effect [:fx2]]
+            [:exec-effect [:fx3]]
+            [:exec-effect [:fx4]]]))))
