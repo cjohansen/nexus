@@ -20,10 +20,6 @@
     (is (true? (nexus/actions? [[:actions/doit "Now!"]
                                 [:actions/also "Do" :this]])))))
 
-(defn ^{:indent 2} with-interceptor [nexus phase f & [id]]
-  (update nexus :nexus/interceptors (fnil conj []) (cond-> {phase f}
-                                                     id (assoc :id id))))
-
 (def nexus-with-inc
   {:nexus/actions
    {:actions/inc
@@ -139,7 +135,7 @@
                             :data {}}}]})))
 
   (testing "Calls before-interceptor before action handler"
-    (is (= (-> (with-interceptor nexus-with-inc :before-action
+    (is (= (-> (h/with-interceptor nexus-with-inc :before-action
                  #(assoc-in % [:state :base-n] 2))
                (nexus/expand-actions {} [[:actions/inc 9]])
                :effects)
@@ -147,7 +143,7 @@
 
   (testing "Calls after-interceptor after action handler"
     (is (= (let [log (atom [])]
-             (-> (with-interceptor nexus-with-inc :after-action
+             (-> (h/with-interceptor nexus-with-inc :after-action
                    (fn [context]
                      (swap! log conj {:in (:action context) :out (:actions context)})
                      context))
@@ -167,7 +163,7 @@
            [])))
 
   (testing "Returns error from before-action interceptor"
-    (is (= (-> (with-interceptor nexus-with-inc :before-action
+    (is (= (-> (h/with-interceptor nexus-with-inc :before-action
                  (fn [ctx]
                    (throw (ex-info "Boom!" {:ctx ctx}))))
                (nexus/expand-actions {:state "Here"} [[:actions/inc 2]])
@@ -187,7 +183,7 @@
               :action [:actions/inc 2]}]})))
 
   (testing "Returns error from after-action interceptor"
-    (is (= (-> (with-interceptor nexus-with-inc :after-action
+    (is (= (-> (h/with-interceptor nexus-with-inc :after-action
                  (fn [ctx]
                    (throw (ex-info "Boom!" {:ctx ctx})))
                  :logger)
@@ -209,10 +205,10 @@
               :action [:actions/inc 2]}]})))
 
   (testing "Allows interceptor to abort action expansion flow"
-    (is (= (-> (with-interceptor nexus-with-inc :before-action
+    (is (= (-> (h/with-interceptor nexus-with-inc :before-action
                  #(throw (ex-info "Boom!" {:ctx %}))
                  :logger)
-               (with-interceptor :before-action
+               (h/with-interceptor :before-action
                    #(cond-> %
                       (:errors %) (dissoc :queue :stack))
                  :abort-early)

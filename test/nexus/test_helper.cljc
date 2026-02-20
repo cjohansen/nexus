@@ -26,3 +26,7 @@
   (-> res
       (select-keys [:effects :errors])
       (update :errors (fn [errors] (mapv #(update % :err ex->data) errors)))))
+
+(defn ^{:indent 2} with-interceptor [nexus phase f & [id]]
+  (update nexus :nexus/interceptors (fnil conj []) (cond-> {phase f}
+                                                     id (assoc :id id))))
