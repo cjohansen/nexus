@@ -21,7 +21,7 @@
              (conjv interceptors effect-interceptor)
              [:before-effect :after-effect :effect])]
         (cond-> (assoc ctx :actions (rest actions))
-          (seq results) (update :results conjv results)
+          (seq results) (update :results intov results)
           (seq errors) (update :errors conjv errors)))
       ;;Effect not found
       (-> ctx
@@ -84,7 +84,7 @@
                          :dispatch dispatch*)
                   (expand-lazily nexus))]
     (if (empty? (:actions ctx*))
-      ctx*
+      (select-keys ctx* [:results :errors])
       (->> ctx*
            (execute-first nexus)
            (recur nexus)))))

@@ -40,6 +40,17 @@
             [:exec-effect [:fx3]]
             [:exec-effect [:fx4]]]))))
 
+(deftest parity-test
+  (testing "Has the same return value as the batch strategy"
+    (let [nexus {:nexus/system->state deref
+                 :nexus/effects
+                 {:effects/save
+                  (fn [_ store path v]
+                    (swap! store assoc-in path v))}}
+          actions [[:effects/save [:number] 3]]]
+      (is (= (serial/dispatch nexus (atom {}) {} actions)
+             (nexus/dispatch nexus (atom {}) {} actions))))))
+
 (deftest expand-actions-test
   (testing "Noops without any expansions"
     (is (= (->> {:actions [[:actions/test :it]]}
