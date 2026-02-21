@@ -242,3 +242,84 @@
             [:after-action 3 :actions/inc [:effects/save]]
             [:after-action 2 :actions/inc [:effects/save]]
             [:after-action 1 :actions/inc [:effects/save]]]))))
+
+(def nexus-with-save
+  {:nexus/effects
+   {:effects/save
+    (fn [_ store path v]
+      (swap! store assoc-in path v))}})
+
+(deftest execute-first-test
+  (testing "Fails when there is no implementation"
+    (is (= (-> (serial/execute-first {}
+                 {:system (atom {})
+                  :actions [[:effects/save [:number] 3]]})
+               h/datafy-errors)
+           {:errors [{:phase :execute-effect
+                      :effect-k :effects/save
+                      :err {:message "No such effect"
+                            :data {:available-effects nil}}}]})))
+
+  (testing "Includes result of executing effect"
+    (is (= (-> {:nexus/effects
+                {:effects/save
+                 (fn [_ store path v]
+                   (swap! store assoc-in path v))}}
+               (serial/execute-first
+                   {:system (atom {:existing "Data"})
+                    :actions [[:effects/save [:number] 3]]})
+               :results)
+           [{:effect [:effects/save [:number] 3]
+             :res {:existing "Data"
+                   :number 3}}])))
+
+  (testing "Adds to existing results"
+    (is (= (let [ctx (serial/execute-first nexus-with-save
+                       {:system (atom {:existing "Data"})
+                        :actions [[:effects/save [:number] 3]
+                                  [:effects/save [:name] "Nexus"]]})]
+             (:results (serial/execute-first nexus-with-save ctx)))
+           [{:effect [:effects/save [:number] 3]
+             :res {:existing "Data"
+                   :number 3}}
+            {:effect [:effects/save [:name] "Nexus"]
+             :res {:existing "Data"
+                   :number 3
+                   :name "Nexus"}}])))
+
+  (testing "Calls interceptors in order"
+    (is (= (let [log (atom [])]
+             (-> nexus-with-save
+                 (assoc :nexus/interceptors
+                        [(h/log-interceptor log 1)
+                         (h/log-interceptor log 2)
+                         (h/log-interceptor log 3)])
+                 (serial/execute-first
+                     {:system (atom {:existing "Data"})
+                      :actions [[:effects/save [:number] 9]]}))
+             @log)
+           [[:before-effect 1 :effects/save]
+            [:before-effect 2 :effects/save]
+            [:before-effect 3 :effects/save]
+            [:after-effect 3 :effects/save {:existing "Data", :number 9}]
+            [:after-effect 2 :effects/save {:existing "Data", :number 9}]
+            [:after-effect 1 :effects/save {:existing "Data", :number 9}]]))))
+
+(deftest dispatch-test
+  (testing "Collects multiple errors"
+    (is (= (-> (serial/dispatch
+                {:nexus/system->state deref}
+                (atom {})
+                {}
+                [[:effects/save [:number] 3]
+                 [:effects/save [:count] 5]])
+               h/datafy-errors)
+           {:errors
+            [{:action [:effects/save [:number] 3]
+              :phase :expand-action
+              :err {:message ":effects/save not found in handler map"
+                    :data {:available-actions nil}}}
+             {:action [:effects/save [:count] 5]
+              :phase :expand-action
+              :err {:message ":effects/save not found in handler map"
+                    :data {:available-actions nil}}}]}))))

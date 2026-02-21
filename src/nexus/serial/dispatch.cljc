@@ -3,27 +3,21 @@
 
 (defn get-effect-interceptor [nexus effect]
   (when-let [handler (get-in nexus [:nexus/effects (first effect)])]
-    (let [wrapped-handler (partial nexus/wrap-effect-handler handler)]
-      {:phase :execute-effect
-       :before-effect (fn [ctx]
-                        (let [{:keys [res errors]} (wrapped-handler ctx)]
-                          (cond-> ctx
-                            res (update :results conjv {:effect effect :res res})
-                            errors (update :errors intov errors))))})))
+    {:phase :execute-effect
+     :before-effect (partial nexus/wrap-effect-handler handler)}))
 
-(defn execute-first [{:nexus/keys [interceptors] :as nexus}
-                     {:keys [dispatch-data actions] :as ctx}]
+(defn ^{:indent 1} execute-first [{:nexus/keys [interceptors] :as nexus}
+                                  {:keys [dispatch-data actions] :as ctx}]
   (let [[effect-k :as effect] (first actions)]
     (if-let [effect-interceptor (get-effect-interceptor nexus effect)]
-      (let [{:keys [results errors]}
-            (nexus/run-interceptors
-             (assoc ctx :effect (nexus/interpolate-1 nexus dispatch-data effect))
-             (conjv interceptors effect-interceptor)
-             [:before-effect :after-effect :effect])]
+      (let [effect (nexus/interpolate-1 nexus dispatch-data effect)
+            {:keys [res errors]} (nexus/run-interceptors (assoc ctx :effect effect)
+                                   (conjv interceptors effect-interceptor)
+                                   [:before-effect :after-effect :effect])]
         (cond-> (assoc ctx :actions (rest actions))
-          (seq results) (update :results intov results)
-          (seq errors) (update :errors conjv errors)))
-      ;;Effect not found
+          res (update :results conjv {:effect effect :res res})
+          (seq errors) (update :errors intov errors)))
+      ;; Effect not found
       (-> ctx
           (assoc :actions (rest actions))
           (update :errors conjv
@@ -38,13 +32,13 @@
     (if-let [handler (get-in nexus [:nexus/actions kind])]
       (let [{:keys [action actions errors]}
             (nexus/run-interceptors
-             (cond-> {:state state
-                      :action (nexus/interpolate-1 nexus dispatch-data action)}
-               errors (assoc :errors errors))
-             (conjv interceptors
-                    {:phase :expand-action
-                     :before-action (partial nexus/wrap-action-handler handler)})
-             [:before-action :after-action :action])
+                (cond-> {:state state
+                         :action (nexus/interpolate-1 nexus dispatch-data action)}
+                  errors (assoc :errors errors))
+              (conjv interceptors
+                     {:phase :expand-action
+                      :before-action (partial nexus/wrap-action-handler handler)})
+              [:before-action :after-action :action])
             expansion (intov actions remaining)
             ok? (or (nil? actions) (nexus/actions? actions))]
         (cond-> ctx
