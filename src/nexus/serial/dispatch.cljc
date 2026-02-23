@@ -78,7 +78,7 @@
                          :dispatch dispatch*)
                   (expand-lazily nexus))]
     (if (empty? (:actions ctx*))
-      (select-keys ctx* [:results :errors])
+      (select-keys ctx* [:results :errors :queue :stack])
       (->> ctx*
            (execute-first nexus)
            (recur nexus)))))
