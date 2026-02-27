@@ -69,10 +69,8 @@
 
 (declare dispatch)
 
-(defn dispatch-serially [nexus {:keys [system dispatch-data] :as ctx}]
+(defn dispatch-serially [nexus dispatch* {:keys [system dispatch-data] :as ctx}]
   (let [state (apply (:nexus/system->state nexus) [system])
-        dispatch* (fn [actions & [additional-dispatch-data]]
-                    (dispatch nexus system (merge dispatch-data additional-dispatch-data) actions))
         ctx* (->> (assoc ctx
                          :state state
                          :dispatch dispatch*)
@@ -81,14 +79,13 @@
       (select-keys ctx* [:results :errors :queue :stack])
       (->> ctx*
            (execute-first nexus)
-           (recur nexus)))))
-
-(defn as-serial-dispatch-interceptor [nexus]
-  {:id ::dispatch
-   :phase :action-dispatch
-   :before-dispatch (partial dispatch-serially nexus)})
+           (recur nexus dispatch*)))))
 
 (defn dispatch [{:nexus/keys [interceptors] :as nexus} system dispatch-data actions]
-  (nexus/run-interceptors {:system system :dispatch-data dispatch-data :actions actions}
-    (conjv interceptors (as-serial-dispatch-interceptor nexus))
-    [:before-dispatch :after-dispatch]))
+  (let [dispatch* (fn [actions & [additional-dispatch-data]]
+                    (dispatch nexus system (merge dispatch-data additional-dispatch-data) actions))]
+    (nexus/run-interceptors {:system system :dispatch-data dispatch-data :actions actions}
+                            (conjv interceptors {:id ::dispatch
+                                                 :phase :action-dispatch
+                                                 :before-dispatch (partial dispatch-serially nexus dispatch*)})
+                            [:before-dispatch :after-dispatch])))
