@@ -83,9 +83,11 @@
 
 (defn dispatch [{:nexus/keys [interceptors] :as nexus} system dispatch-data actions]
   (let [dispatch* (fn [actions & [additional-dispatch-data]]
-                    (dispatch nexus system (merge dispatch-data additional-dispatch-data) actions))]
-    (nexus/run-interceptors {:system system :dispatch-data dispatch-data :actions actions}
-                            (conjv interceptors {:id ::dispatch
-                                                 :phase :action-dispatch
-                                                 :before-dispatch (partial dispatch-serially nexus dispatch*)})
-                            [:before-dispatch :after-dispatch])))
+                    (dispatch nexus system (merge dispatch-data additional-dispatch-data) actions))
+        interceptors (conjv interceptors {:id ::dispatch
+                                          :phase :action-dispatch
+                                          :before-dispatch (partial dispatch-serially nexus dispatch*)})]
+    (-> (nexus/run-interceptors {:system system :dispatch-data dispatch-data :actions actions}
+                                interceptors
+                                [:before-dispatch :after-dispatch])
+        (dissoc :queue :stack))))
