@@ -20,40 +20,11 @@
     (is (true? (nexus/actions? [[:actions/doit "Now!"]
                                 [:actions/also "Do" :this]])))))
 
-(defn ^{:indent 2} with-interceptor [nexus phase f & [id]]
-  (update nexus :nexus/interceptors (fnil conj []) (cond-> {phase f}
-                                                     id (assoc :id id))))
-
 (def nexus-with-inc
   {:nexus/actions
    {:actions/inc
     (fn [state n]
       [[:effects/save [:number] (+ (or (:base-n state) 0) n 1)]])}})
-
-(defn log-interceptor [log n]
-  {:id n
-   :before-action (fn [in]
-                    (swap! log conj [:before-action n (get-in in [:action 0])])
-                    in)
-   :after-action (fn [in]
-                   (swap! log conj (cond-> [:after-action n (get-in in [:action 0])]
-                                     (seq (:actions in)) (conj (mapv first (:actions in)))))
-                   in)
-   :before-effect (fn [in]
-                    (swap! log conj [:before-effect n
-                                     (first (or (:effect in) (first (:effects in))))])
-                    in)
-   :after-effect (fn [in]
-                   (swap! log conj [:after-effect n
-                                    (first (or (:effect in) (first (:effects in))))
-                                    (:res in)])
-                   in)
-   :before-dispatch (fn [in]
-                      (swap! log conj [:before-dispatch n (:actions in)])
-                      in)
-   :after-dispatch (fn [in]
-                     (swap! log conj [:after-dispatch n (:results in)])
-                     in)})
 
 (deftest expand-actions-test
   (testing "Noops without any expansions"
@@ -139,7 +110,7 @@
                             :data {}}}]})))
 
   (testing "Calls before-interceptor before action handler"
-    (is (= (-> (with-interceptor nexus-with-inc :before-action
+    (is (= (-> (h/with-interceptor nexus-with-inc :before-action
                  #(assoc-in % [:state :base-n] 2))
                (nexus/expand-actions {} [[:actions/inc 9]])
                :effects)
@@ -147,7 +118,7 @@
 
   (testing "Calls after-interceptor after action handler"
     (is (= (let [log (atom [])]
-             (-> (with-interceptor nexus-with-inc :after-action
+             (-> (h/with-interceptor nexus-with-inc :after-action
                    (fn [context]
                      (swap! log conj {:in (:action context) :out (:actions context)})
                      context))
@@ -167,7 +138,7 @@
            [])))
 
   (testing "Returns error from before-action interceptor"
-    (is (= (-> (with-interceptor nexus-with-inc :before-action
+    (is (= (-> (h/with-interceptor nexus-with-inc :before-action
                  (fn [ctx]
                    (throw (ex-info "Boom!" {:ctx ctx}))))
                (nexus/expand-actions {:state "Here"} [[:actions/inc 2]])
@@ -187,7 +158,7 @@
               :action [:actions/inc 2]}]})))
 
   (testing "Returns error from after-action interceptor"
-    (is (= (-> (with-interceptor nexus-with-inc :after-action
+    (is (= (-> (h/with-interceptor nexus-with-inc :after-action
                  (fn [ctx]
                    (throw (ex-info "Boom!" {:ctx ctx})))
                  :logger)
@@ -209,10 +180,10 @@
               :action [:actions/inc 2]}]})))
 
   (testing "Allows interceptor to abort action expansion flow"
-    (is (= (-> (with-interceptor nexus-with-inc :before-action
+    (is (= (-> (h/with-interceptor nexus-with-inc :before-action
                  #(throw (ex-info "Boom!" {:ctx %}))
                  :logger)
-               (with-interceptor :before-action
+               (h/with-interceptor :before-action
                    #(cond-> %
                       (:errors %) (dissoc :queue :stack))
                  :abort-early)
@@ -233,9 +204,9 @@
                    (fn [state n]
                      (swap! log conj [:action])
                      [[:effects/save [:number] (+ (or (:base-n state) 0) n 1)]])}
-                  :nexus/interceptors [(log-interceptor log 1)
-                                       (log-interceptor log 2)
-                                       (log-interceptor log 3)]}
+                  :nexus/interceptors [(h/log-interceptor log 1)
+                                       (h/log-interceptor log 2)
+                                       (h/log-interceptor log 3)]}
                  (nexus/expand-actions {} [[:actions/inc 9]]))
              @log)
            [[:before-action 1 :actions/inc]
@@ -354,9 +325,9 @@
     (is (= (let [log (atom [])]
              (-> nexus-with-save
                  (assoc :nexus/interceptors
-                        [(log-interceptor log 1)
-                         (log-interceptor log 2)
-                         (log-interceptor log 3)])
+                        [(h/log-interceptor log 1)
+                         (h/log-interceptor log 2)
+                         (h/log-interceptor log 3)])
                  (nexus/execute
                   {:system (atom {:existing "Data"})}
                   [[:effects/save [:number] 9]]))
@@ -372,9 +343,9 @@
     (is (= (let [log (atom [])]
              (-> nexus-with-batched-save
                  (assoc :nexus/interceptors
-                        [(log-interceptor log 1)
-                         (log-interceptor log 2)
-                         (log-interceptor log 3)])
+                        [(h/log-interceptor log 1)
+                         (h/log-interceptor log 2)
+                         (h/log-interceptor log 3)])
                  (nexus/execute
                   {:system (atom {:existing "Data"})}
                   [[:effects/save [:number] 9]]))
@@ -449,9 +420,9 @@
                  log (atom [])]
              (-> {:nexus/system->state deref
                   :nexus/placeholders {:dispatch/number (fn [{:keys [value]}] value)}
-                  :nexus/interceptors [(log-interceptor log 1)
-                                       (log-interceptor log 2)
-                                       (log-interceptor log 3)]}
+                  :nexus/interceptors [(h/log-interceptor log 1)
+                                       (h/log-interceptor log 2)
+                                       (h/log-interceptor log 3)]}
                  (merge nexus-with-inc)
                  (merge nexus-with-save)
                  (nexus/dispatch store {:value 5} [[:actions/inc [:dispatch/number]]]))
@@ -487,7 +458,7 @@
                                                (if (contains? dispatch-data k)
                                                  (k dispatch-data)
                                                  [:dd/k k]))}
-                  :nexus/interceptors [(log-interceptor log 1)]
+                  :nexus/interceptors [(h/log-interceptor log 1)]
                   :nexus/effects {:effects/save
                                   (fn [{:keys [dispatch]} store path v & [{:keys [on-success]}]]
                                     (let [res (swap! store assoc-in path v)]
