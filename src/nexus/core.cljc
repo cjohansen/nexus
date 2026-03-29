@@ -1,8 +1,14 @@
 (ns nexus.core
   (:require [clojure.walk :as walk]))
 
-(def ^:private conjv (fnil conj []))
-(def ^:private intov (fnil into []))
+(def conjv (fnil conj []))
+(def intov (fnil into []))
+
+(defn assoc-some [m k v]
+  (cond-> m
+    (and v (when (coll? v)
+             (seq v)))
+    (assoc k v)))
 
 (defn action? [data]
   (and (vector? data) (keyword? (first data))))
@@ -17,9 +23,9 @@
                 (ifn? f) f)
               (catch #?(:clj Exception :cljs :default) e
                 (update state :errors conjv
-                        (into {:phase phase
-                               :err e
-                               k (ctx k)}
+                        (into (cond-> {:phase phase
+                                       :err e}
+                                k (assoc k (ctx k)))
                               (select-keys interceptor [:id]))))))]
     (loop [state (merge ctx {:queue interceptors :stack ()})]
       (cond
@@ -51,8 +57,8 @@
     (cond-> interpolated
       (not= interpolated action) (with-meta {:nexus/action action}))))
 
-(defn ^:no-doc expand-action [nexus state [kind :as action] {:keys [dispatch-data errors]}]
-  (let [action (interpolate-1 nexus dispatch-data action)]
+(defn ^:no-doc expand-action [nexus state {:keys [dispatch-data errors]} action]
+  (let [[kind :as action] (interpolate-1 nexus dispatch-data action)]
     (if-let [f (get-in nexus [:nexus/actions kind])]
       (let [{:keys [action actions errors]}
             (run-interceptors (cond-> {:state state :action action}
@@ -64,27 +70,22 @@
             acc (cond-> {}
                   (seq errors) (assoc :errors errors))]
         (cond
-          (nil? actions) acc
+          (empty? actions) acc
 
           (not (actions? actions))
           {:errors [{:action action
                      :phase :expand-action
                      :err (ex-info (str (first action) " should expand to a collection of actions")
-                                   {:res actions})}]}
-
-          (= actions [action])
-          (cond-> acc
-            (seq actions) (assoc :actions actions))
+                                   {:res actions
+                                    :action action})}]}
 
           :else
-          (reduce (fn [res action]
-                    (let [{:keys [errors actions]} (expand-action nexus state action {:dispatch-data dispatch-data
-                                                                                      :errors (:errors res)})]
-                      (cond-> res
-                        (seq errors) (update :errors intov errors)
-                        (seq actions) (update :actions intov actions))))
-                  acc actions)))
-      {:actions [action]})))
+          (let [res (expand-action nexus state (assoc acc :dispatch-data dispatch-data) (first actions))
+                remaining-actions (intov (next actions) (:actions res))]
+            (cond-> res
+              (seq remaining-actions) (assoc :actions remaining-actions)))))
+      (cond-> {:effects [action]}
+        (seq errors) (assoc :errors errors)))))
 
 (defn expand-actions
   "Loops over `actions`, and expands each action to a list of actions with
@@ -113,46 +114,101 @@
        (mapv key)
        set))
 
+(def effect-ks
+  #{:system :dispatch-data :dispatch :errors :results})
+
 (defn ^:no-doc wrap-batched-effect-handler [f ctx]
-  (assoc ctx :res (f (dissoc ctx :system :actions :effects :queue :stack)
+  (assoc ctx :res (f (select-keys ctx effect-ks)
                      (:system ctx)
                      (mapv next (:effects ctx)))))
 
 (defn ^:no-doc wrap-effect-handler [f ctx]
-  (assoc ctx :res (apply f (dissoc ctx :system :actions :effect :queue :stack)
+  (assoc ctx :res (apply f (select-keys ctx effect-ks)
                          (:system ctx)
                          (next (:effect ctx)))))
 
-(defn ^:no-doc execute-batch [acc nexus ctx effect-k effects k wrap-handler]
+(defn ^:no-doc execute-batch [nexus ctx effect-k effects k wrap-handler]
   (if-let [f (get-in nexus [:nexus/effects effect-k])]
     (let [v (cond-> effects
               (= k :effect) first)
-          ret (run-interceptors (into (assoc ctx k v) (select-keys acc [:errors]))
+          ret (run-interceptors (assoc ctx k v)
                 (conj (vec (:nexus/interceptors nexus))
                       {:phase :execute-effect
                        :before-effect (partial wrap-handler f)})
                 [:before-effect :after-effect :effect])]
-      (cond-> acc
+      (cond-> ctx
         (:res ret) (update :results conjv (into {k v} (select-keys ret [:res])))
         (:errors ret) (assoc :errors (:errors ret))))
-    (update acc :errors conjv
+    (update ctx :errors conjv
             {:phase :execute-effect
              :effect-k effect-k
              :err (ex-info "No such effect" {:available-effects (keys (:nexus/effects nexus))})})))
 
-(defn execute
-  "Execute `effects` one by one. Calls every `:before-effect` interceptor before
-  executing the action, and every `:after-effect` interceptor after. Returns a
-  collection of maps of `{:action :res}` where `:res` is the return value of the
-  effect implementation."
-  [nexus ctx effects]
-  (->> (group-by (comp (get-batched-effects nexus) first) effects)
-       (reduce
-        (fn [acc [effect-k effects]]
-          (if effect-k
-            (execute-batch acc nexus ctx effect-k effects :effects wrap-batched-effect-handler)
-            (reduce #(execute-batch %1 nexus ctx (first %2) [%2] :effect wrap-effect-handler)
-                    acc effects))) {})))
+(defn execute [nexus ctx [effect-k :as effect]]
+  {:pre [(action? effect)]}
+  (if (get-in nexus [:nexus/effects effect-k])
+    (execute-batch nexus ctx effect-k [effect] :effect wrap-effect-handler)
+    (update ctx :errors conjv
+            {:phase :execute-effect
+             :effect-k effect-k
+             :err (ex-info "No such effect" {:available-effects (keys (:nexus/effects nexus))})})))
+
+(defn ^{:indent 1 :nodoc true} batch-by [f xs]
+  (let [[m order]
+        (reduce (fn [[m order] x]
+                  (let [k (f x)]
+                    [(update m k conjv x)
+                     (cond-> order
+                       (not (contains? m k)) (conj k))]))
+                [{} []]
+                xs)]
+    (mapv m order)))
+
+(defn ^:nodoc divide-by [f xs]
+  (loop [a []
+         b []
+         xs (seq xs)]
+    (if (nil? xs)
+      [a b]
+      (if (f (first xs))
+        (recur (conj a (first xs)) b (next xs))
+        (recur a (conj b (first xs)) (next xs))))))
+
+(defn ^:nodoc ->execute-ctx [ctx dispatch!]
+  (assoc ctx :dispatch
+         (fn [& args]
+           (select-keys (apply dispatch! args) [:results :errors]))))
+
+(defn dispatch-handler [nexus dispatch! ctx]
+  (let [batched? (get-batched-effects nexus)
+        get-state (or (some-> (:nexus/system->state nexus)
+                              (partial (:system ctx)))
+                      (constantly nil))]
+    (loop [ctx (assoc ctx :state (get-state))
+           effects []
+           batched-effects []]
+      (if-let [effect (first effects)]
+        (let [res (execute nexus (->execute-ctx ctx dispatch!) effect)]
+          (recur
+           (-> (assoc ctx :state (get-state))
+                       (assoc-some :errors (:errors res))
+                       (assoc :results (:results res)))
+           (next effects)
+           batched-effects))
+        (if-let [action (first (:actions ctx))]
+          (let [res (expand-action nexus (:state ctx) ctx action)
+                [bfxs fxs] (divide-by (comp batched? first) (:effects res))]
+            (recur (-> ctx
+                       (update :actions #(into (next %) (:actions res)))
+                       (assoc-some :errors (:errors res)))
+                   fxs
+                   (into batched-effects bfxs)))
+          (-> (reduce
+               (fn [ctx batch]
+                 (merge ctx (select-keys (execute-batch nexus (->execute-ctx ctx dispatch!) (ffirst batch) batch :effects wrap-batched-effect-handler) [:errors :results])))
+               ctx
+               (batch-by first batched-effects))
+              (select-keys [:errors :results :queue :stack])))))))
 
 (defn ^{:indent 3} dispatch [nexus system dispatch-data actions]
   (when (:nexus/actions nexus)
@@ -160,24 +216,8 @@
   (let [dispatch!
         (fn dispatch! [actions & [disp-data]]
           (let [handler {:phase :action-dispatch
-                         :before-dispatch
-                         (fn [ctx]
-                           (let [{:keys [effects errors]} (expand-actions nexus (:state ctx) (:actions ctx) (:dispatch-data ctx))
-                                 !nested-errors (atom nil)
-                                 dispatch!* (fn [& args]
-                                              (let [res (apply dispatch! args)]
-                                                (reset! !nested-errors (:errors res))
-                                                (select-keys res [:results :errors])))]
-                             (cond-> ctx
-                               errors (assoc :errors errors)
-                               effects (into (execute nexus (assoc (dissoc ctx :actions) :dispatch dispatch!*)
-                                                      (cond->> effects
-                                                        (not= actions effects)
-                                                        (interpolate nexus (:dispatch-data ctx)))))
-                               @!nested-errors (update :errors into @!nested-errors))))}]
+                         :before-dispatch (partial dispatch-handler nexus dispatch!)}]
             (run-interceptors {:system system
-                               :state (when-let [system->state (:nexus/system->state nexus)]
-                                        (system->state system))
                                :dispatch-data (merge dispatch-data disp-data)
                                :actions actions}
               (conj (vec (:nexus/interceptors nexus)) handler)
