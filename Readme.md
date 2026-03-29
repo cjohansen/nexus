@@ -11,7 +11,7 @@ Nexus is a small, zero-dependency library for dispatching **actions** — data
 describing what should happen — with mostly pure functions.
 
 ```clj
-no.cjohansen/nexus {:mvn/version "2025.11.1"}
+no.cjohansen/nexus {:mvn/version "2026.04.1"}
 ```
 
 [Replicant](https://replicant.fun) provides a data-driven and functional
@@ -106,6 +106,11 @@ this later), your *system*, and any arguments from the action.
 
 Nexus makes no assumptions about what the *system* is—you will pass it when
 dispatching actions. In this example we'll use an atom, called the `store`.
+
+The difference between an _action_ and an _effect_ lies in how it is processed.
+They are both expressed as a vector/tuple. In other words `[:ui/alert "Hello"]`
+can be an action or an effect, depending on how you've defined `:ui/alert` for
+Nexus.
 
 ### Implementing an effect
 
