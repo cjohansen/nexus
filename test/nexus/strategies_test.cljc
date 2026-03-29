@@ -34,10 +34,10 @@
                     [:actions/succeed 2]
                     [:effects/fail 3]]) ;; ...so this won't be executed
                h/datafy-errors)
-           {:errors [{:phase :execute-effect
-                      :effect [:effects/fail 3]
+           {:errors [{:phase :expand-action
                       :err {:message "Boom!"
-                            :data {}}}]})))
+                            :data {}}
+                      :action [:actions/fail 1]}]})))
 
   (testing "Aborts on first effect error"
     (is (= (-> nexus
