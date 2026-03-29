@@ -114,7 +114,7 @@ Nexus.
 
 ### Implementing an effect
 
-Put action implementations in your `nexus` map:
+Put effect implementations in your `nexus` map:
 
 ```clj
 (def nexus
@@ -394,6 +394,9 @@ receive a collection of action arguments:
 With this minor change, every `:effects/save` will be handled together,
 resulting in only a single `swap!`.
 
+Batching effects may cause them to be executed out of order. Nexus must expand
+all actions before any batched effect can be executed.
+
 ### Asynchronous effects
 
 Imagine that there is a form to add new tasks. When the form is submitted, we
@@ -454,7 +457,7 @@ stick a placeholder here, as it would resolved immediately upon dispatching
 `:effects/command` -- there is no way for Nexus to know that `:on-success`
 describes something that should happen later.
 
-This problem needs a custom solution in your app. One possibly solution is to
+This problem needs a custom solution in your app. One possible solution is to
 use a placeholder anyway, and implement it such that it preserves the
 placeholder when there is not yet a value to replace it with:
 
@@ -967,6 +970,13 @@ Designed by [Magnar Sveen](https://magnars.com) ([@magnars](https://github.com/m
 
 ## Changelog
 
+### 2026.04.1
+
+Change execution model to eagerly execute commands, see [relevant
+ADR](/doc/adr01-instantly-process-effects.md).
+
+Thanks [Cormac Cannon](https://github.com/cormacc)!
+
 ### 2025.11.1
 
 Fix a bug where nested calls to `dispatch` would swallow errors. Synchronous
@@ -984,5 +994,5 @@ Interpolate placeholders in between each action expansion.
 
 ## License: MIT
 
-Copyright © 2025 Christian Johansen, Magnar Sveen, and Teodor Heggelund.
+Copyright © 2025-2026 Christian Johansen, Magnar Sveen, and Teodor Heggelund.
 Distributed under the [MIT License](https://opensource.org/license/mit).
