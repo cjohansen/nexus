@@ -57,7 +57,7 @@
            [{:dispatched-at #inst "2025-06-13T08:40:00.000-00:00"
              :actions [[:actions/inc 2]]
              :dispatch-data {:data 42}
-             :state {}
+             :state nil
              :expansions [{:action [:actions/inc 2]
                            :expansion [[:effects/save [:number] 3]]}]
              :effects [[:effects/save [:number] 3]]
