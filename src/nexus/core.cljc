@@ -164,15 +164,7 @@
                 xs)]
     (mapv m order)))
 
-(defn ^:nodoc divide-by [f xs]
-  (loop [a []
-         b []
-         xs (seq xs)]
-    (if (nil? xs)
-      [a b]
-      (if (f (first xs))
-        (recur (conj a (first xs)) b (next xs))
-        (recur a (conj b (first xs)) (next xs))))))
+(def ^:nodoc divide-by (juxt filter remove))
 
 (defn ^:nodoc ->execute-ctx [ctx dispatch!]
   (assoc ctx :dispatch
