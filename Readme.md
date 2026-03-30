@@ -984,6 +984,9 @@ ADR](/doc/adr01-instantly-process-effects.md).
 
 Thanks [Cormac Cannon](https://github.com/cormacc)!
 
+Remove the error propagation for synchronous nested calls do `dispatch`
+introduced in 2025.11.1. This change duplicated errors in interceptors, and does
+not work consistently for async and sync calls to dispatch.
 ### 2025.11.1
 
 Fix a bug where nested calls to `dispatch` would swallow errors. Synchronous
