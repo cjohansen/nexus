@@ -987,6 +987,12 @@ Thanks [Cormac Cannon](https://github.com/cormacc)!
 Remove the error propagation for synchronous nested calls do `dispatch`
 introduced in 2025.11.1. This change duplicated errors in interceptors, and does
 not work consistently for async and sync calls to dispatch.
+
+Include a `:trace` with errors that includes every action and effect that lead
+to an error. This gives full traceability across nested dispatch calls for both
+async and sync calls, and can be leveraged by tooling to properly "connect the
+dots" when errors occur.
+
 ### 2025.11.1
 
 Fix a bug where nested calls to `dispatch` would swallow errors. Synchronous
