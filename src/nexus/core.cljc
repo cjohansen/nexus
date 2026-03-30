@@ -87,19 +87,6 @@
       (cond-> {:effects [action]}
         (seq errors) (assoc :errors errors)))))
 
-(defn expand-actions
-  "Loops over `actions`, and expands each action to a list of actions with
-  available implementations in `nexus`. Passes `state` to each implementation.
-  Calls every available `:before-action` interceptor before expanding and every
-  `:after-action` interceptor after. Returns a map of `{:effects :errors}`."
-  [nexus state actions & [dispatch-data]]
-  (reduce (fn [res action]
-            (let [{:keys [actions errors]} (expand-action nexus state action res)]
-              (cond-> res
-                (seq actions) (update :effects intov actions)
-                (seq errors) (assoc :errors errors))))
-          {:dispatch-data dispatch-data} actions))
-
 (defn interpolate
   "Walks `actions`, and replaces any forms matching a registered placeholder with
   the value of calling the corresponding function with `dispatch-data`. Returns
