@@ -60,6 +60,7 @@
                h/datafy-errors)
            {:errors
             [{:action [:actions/test "it"]
+              :trace [[:actions/test "it"]]
               :phase :expand-action
               :err {:message ":actions/test should expand to a collection of actions"
                     :data {:res [:actions/store 2 "it"]
@@ -95,7 +96,9 @@
                    [[:actions/store "n" (+ a b)]])}}
                (nexus/expand-action {} {} [:actions/inc-much 2]))
            {:effects [[:actions/store "n" 3]]
-            :actions [[:actions/plus 2 2]]})))
+            :actions [[:actions/plus 2 2]]
+            :trace [[:actions/inc-much 2]
+                    [:actions/plus 2 1]]})))
 
   (testing "Interpolates placeholders in expanded actions"
     (is (= (-> {:nexus/actions
@@ -120,6 +123,7 @@
                h/datafy-errors)
            {:errors [{:phase :expand-action
                       :action [:actions/inc 2]
+                      :trace [[:actions/inc 2]]
                       :err {:message "Boom!"
                             :data {}}}]})))
 
@@ -169,7 +173,8 @@
                  :queue [{:phase :expand-action
                           :before-action ::h/fn}]
                  :stack [{:before-action ::h/fn}]}}}
-              :action [:actions/inc 2]}]})))
+              :action [:actions/inc 2]
+              :trace [[:actions/inc 2]]}]})))
 
   (testing "Returns error from after-action interceptor"
     (is (= (-> (h/with-interceptor nexus-with-inc :after-action
@@ -191,7 +196,8 @@
                  :queue nil
                  :stack nil
                  :actions [[:effects/save [:number] 3]]}}}
-              :action [:actions/inc 2]}]})))
+              :action [:actions/inc 2]
+              :trace [[:actions/inc 2]]}]})))
 
   (testing "Allows interceptor to abort action expansion flow"
     (is (= (-> (h/with-interceptor nexus-with-inc :before-action
@@ -209,6 +215,7 @@
             [{:id :logger
               :phase :before-action
               :action [:actions/inc 2]
+              :trace [[:actions/inc 2]]
               :err {:message "Boom!"}}]})))
 
   (testing "Calls interceptors in order"
@@ -326,7 +333,7 @@
             [:after-effect 2 :effects/save {:existing "Data", :number 9}]
             [:after-effect 1 :effects/save {:existing "Data", :number 9}]]))))
 
-(deftest dispatch-actions-test
+(deftest dispatch-handler-test
   (testing "Expands action and executes effect"
     (is (= (-> nexus-with-save
                (nexus/dispatch-handler
@@ -388,9 +395,29 @@
                (nexus/dispatch (atom nil) {} [[:effects/fail]])
                h/datafy-errors)
            {:errors [{:effect [:effects/fail]
-                      :err    {:data    {}
-                               :message "Boom!"}
-                      :phase  :execute-effect}]})))
+                      :err {:data {}
+                            :message "Boom!"}
+                      :phase :execute-effect
+                      :trace [[:effects/fail]]}]})))
+
+  (testing "Includes action in effect error trace"
+    (is (= (-> {:nexus/system->state deref
+                :nexus/actions
+                {:actions/prepare-to-fail
+                 (fn [_]
+                   [[:effects/fail]])}
+                :nexus/effects
+                {:effects/fail
+                 (fn [_ _]
+                   (throw (ex-info "Boom!" {})))}}
+               (nexus/dispatch (atom nil) {} [[:actions/prepare-to-fail]])
+               h/datafy-errors)
+           {:errors [{:effect [:effects/fail]
+                      :err {:data {}
+                            :message "Boom!"}
+                      :phase :execute-effect
+                      :trace [[:actions/prepare-to-fail]
+                              [:effects/fail]]}]})))
 
   (testing "Does not return errors from effect that is dispatched from effect"
     ;; The nested dispatch is intended for async usage. Re-emitting errors from
@@ -424,11 +451,42 @@
                    (fn [{:keys [dispatch]} _]
                      (dispatch [[:effects/fail]]))}}
                  (nexus/dispatch (atom nil) {} [[:effects/dispatch-fail]]))
-             (h/datafy-errors {:errors @intercepted-errors}))
-           {:errors [{:phase :execute-effect
-                      :err {:message "Boom!"
-                            :data {}}
-                      :effect [:effects/fail]}]})))
+             (h/datafy-errors* @intercepted-errors))
+           [{:phase :execute-effect
+             :err {:message "Boom!"
+                   :data {}}
+             :effect [:effects/fail]
+             :trace [[:effects/dispatch-fail]
+                     [:effects/fail]]}])))
+
+  (testing "Tracks sources across multiple levels of dispatch"
+    (is (= (let [intercepted-errors (atom nil)]
+             (-> {:nexus/system->state deref
+                  :nexus/interceptors [{:after-effect
+                                        (fn [ctx]
+                                          (swap! intercepted-errors into (:errors ctx))
+                                          ctx)}]
+                  :nexus/effects
+                  {:effects/fail
+                   (fn [_ _]
+                     (throw (ex-info "Boom!" {})))
+
+                   :effects/dispatch-fail
+                   (fn [{:keys [dispatch]} _]
+                     (dispatch [[:effects/fail]]))
+
+                   :effects/prepare-to-fail
+                   (fn [{:keys [dispatch]} _]
+                     (dispatch [[:effects/dispatch-fail]]))}}
+                 (nexus/dispatch (atom nil) {} [[:effects/prepare-to-fail]]))
+             (h/datafy-errors* @intercepted-errors))
+           [{:phase :execute-effect
+             :err {:message "Boom!"
+                   :data {}}
+             :effect [:effects/fail]
+             :trace [[:effects/prepare-to-fail]
+                     [:effects/dispatch-fail]
+                     [:effects/fail]]}])))
 
   (testing "Runs interceptors in order"
     (is (= (let [store (atom {:step-size 3})

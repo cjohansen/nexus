@@ -22,10 +22,13 @@
               :else x))
           (ex-data e))})
 
+(defn datafy-errors* [errors]
+  (mapv #(update % :err ex->data) errors))
+
 (defn datafy-errors [res]
   (-> res
       (select-keys [:effects :errors])
-      (update :errors (fn [errors] (mapv #(update % :err ex->data) errors)))))
+      (update :errors datafy-errors*)))
 
 (defn ^{:indent 2} with-interceptor [nexus phase f & [id]]
   (update nexus :nexus/interceptors (fnil conj []) (cond-> {phase f}
