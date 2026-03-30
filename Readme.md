@@ -959,14 +959,21 @@ You can also register interceptors with `nexus.registry/register-interceptor!`.
 
 ## Nexus in the wild
 
-**Ring middleware:** [ring-nexus-middleware](https://github.com/ovistoica/ring-nexus-middleware) applies Nexus to Ring handlers for clean, testable web applications.
-**Datastar:** [datastar.wow](https://github.com/brianium/datastar.wow) uses Nexus to create extensible, testable, and data-oriented real-time applications via [Datastar](https://data-star.dev/).
+**Ring middleware:**
+[ring-nexus-middleware](https://github.com/ovistoica/ring-nexus-middleware)
+applies Nexus to Ring handlers for clean, testable web applications.
+
+**Datastar:** [datastar.wow](https://github.com/brianium/datastar.wow) uses
+Nexus to create extensible, testable, and data-oriented real-time applications
+via [Datastar](https://data-star.dev/).
 
 ## Acknowledgments
 
-Designed by [Magnar Sveen](https://magnars.com) ([@magnars](https://github.com/magnars)),
-[Christian Johansen](https://cjohansen.no) ([@cjohansen](https://github.com/cjohansen)), and
-[Teodor Heggelund](https://play.teod.eu/) ([@teodorlu](https://github.com/teodorlu)).
+Original design by [Magnar Sveen](https://magnars.com)
+([@magnars](https://github.com/magnars)), [Christian
+Johansen](https://cjohansen.no) ([@cjohansen](https://github.com/cjohansen)),
+and [Teodor Heggelund](https://play.teod.eu/)
+([@teodorlu](https://github.com/teodorlu)).
 
 ## Changelog
 
