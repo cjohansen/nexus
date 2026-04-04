@@ -104,7 +104,9 @@
        set))
 
 (def effect-ks
-  #{:system :dispatch-data :dispatch :errors :results})
+  #{:system :dispatch-data :dispatch :errors :results
+    ;; For backwards compatibility, see tests for explanation
+    :state})
 
 (defn ^:no-doc wrap-batched-effect-handler [f ctx]
   (assoc ctx :res (f (select-keys ctx effect-ks)
