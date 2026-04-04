@@ -661,7 +661,21 @@
                :res)
            {:id 2
             :things {0 "A thing!"
-                     1 "Another thing!"}}))))
+                     1 "Another thing!"}})))
+
+  (testing "Passes state to effect handlers"
+    ;; This isn't really by design or a part of the documented contract, but was
+    ;; an accidental part of earlier Nexus releases, so is preserved for
+    ;; backwards compatibility.
+    (is (= (-> {:nexus/system->state deref
+                :nexus/effects
+                {:effects/doit
+                 (fn [{:keys [state]} _]
+                   state)}}
+               (nexus/dispatch (atom {:state "State"}) {} [[:effects/doit]])
+               :results)
+           [{:effect [:effects/doit]
+             :res {:state "State"}}]))))
 
 (deftest dispatch-order
   (testing "Executes effects prior to action expansion"
