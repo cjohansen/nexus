@@ -275,7 +275,12 @@
                   (nexus/interpolate {:value "5"} [[:actions/inc 3]])
                   first
                   meta
-                  :nexus/action)))))
+                  :nexus/action))))
+
+  (testing "Can opt out of interpolation with meta data"
+    (is (= (-> {:nexus/placeholders {:number (fn [{:keys [value]}] value)}}
+               (nexus/interpolate {:value 3} [[:actions/inc ^:nexus/skip-interpolation [:number]]]))
+           [[:actions/inc [:number]]]))))
 
 (def nexus-with-save
   {:nexus/effects

@@ -337,7 +337,7 @@ Another option is to make sure the state always has the current time on it:
               [:effects/save [:tasks task-id k] v])))}})
 ```
 
-#### Nested placeholder
+#### Nested placeholders
 
 You may have wondered why the placeholder keyword is wrapped in a vector:
 `[:event.target/value]`. The vector allows placeholders to nest, so you can
@@ -368,6 +368,24 @@ placeholder function:
     (fn [_ val]
       (or (some-> val parse-long) 0))}})
 ```
+
+#### Opting out of placeholder interpolation
+
+If you have actions with large data structures in them that should never contain
+placeholders, you can opt out of interpolation for some performance benefits by
+adding meta data:
+
+```clj
+[[:task/set-order
+  (with-meta huge-task {:nexus/skip-interpolation true})
+  [:fmt/long [:event.target/value]]]]
+```
+
+You may want to consider not putting enormous data structures in actions first,
+but for those cases where it can't be avoided, this escape hatch is available.
+
+Most of the time, adding `^:nexus/skip-interpolation` is not necessary. Measure
+before you optimize.
 
 ### Batching effects
 
