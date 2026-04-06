@@ -387,6 +387,7 @@ but for those cases where it can't be avoided, this escape hatch is available.
 Most of the time, adding `^:nexus/skip-interpolation` is not necessary. Measure
 before you optimize.
 
+<a id="batching"></a>
 ### Batching effects
 
 `:task/edit` emits multiple `:effects/save` actions. With the current
@@ -551,15 +552,78 @@ one-liner:
 (def nexus ,,,)
 (def store (atom {}))
 
+(defn state->ui-data [state]
+  [:div
+   [:h1 "Hello world!"]])
+
 (defn start [el nexus store]
   ;; Dispatch Replicant's event data with Nexus
   (r/set-dispatch! #(nexus/dispatch nexus store %1 %2))
-  (add-watch store ::render #(r/render el %4))
+  (add-watch store ::render #(r/render el (state->ui-data %4)))
   (swap! store assoc ::started-at (js/Date.)))
 ```
 
-`set-dispatch!` calls its function with a map that contains, among other things,
-the DOM event under the key `:replicant/dom-event`.
+Replicant calls the function passed to `set-dispatch!` with a map that contains,
+among other things, the DOM event under the key `:replicant/dom-event`.
+
+Beware that this approach can cause multiple renders for a single dispatch if
+there are more than one effect that swaps on the `store` atom. To ensure each
+dispatch only results in a single render (which will give you the best rendering
+performance), you have a few options.
+
+### Rendering from an interceptor
+
+If you only need to trigger rendering from a Nexus dispatch, you can use an
+[interceptor](#interceptors):
+
+```clj
+(defn start [el nexus store]
+  (let [nexus (update nexus :nexus/interceptors conj
+                      {:after-dispatch
+                       (fn [ctx]
+                         (r/render el (state->ui-data @store))
+                         ctx)})]
+    (r/set-dispatch! #(nexus/dispatch nexus store %1 %2))
+    (swap! store assoc ::started-at (js/Date.)))
+    (r/render el (state->ui-data @store)))
+```
+
+This will trigger a render for every dispatch, including async ones triggered be
+effects. However, swap-ing on the atom from elsewhere will not trigger a render.
+
+### Using a render lock
+
+If you'd rather tie rendering to updates to the `store` atom, you can implement
+a render lock to avoid multiple renders per dispatch. The render lock is
+controlled from an interceptor to ensure that it is also in place for async
+dispatch calls triggered by effects:
+
+```clj
+(defn render [el state]
+  (when-not (:pause-rendering? state)
+    (r/render el (state->ui-data state))))
+
+(defn start [el nexus store]
+  (let [nexus (update nexus :nexus/interceptors conj
+                      {:before-dispatch
+                       (fn [ctx]
+                         (swap! store assoc :pause-rendering? true)
+                         ctx)
+
+                       :after-dispatch
+                       (fn [ctx]
+                         (swap! store dissoc :pause-rendering?)
+                         ctx)})]
+    (r/set-dispatch! #(nexus/dispatch nexus store %1 %2))
+    (add-watch store ::render #(render el %4))
+    (swap! store assoc ::started-at (js/Date.))))
+```
+
+### Batching effects
+
+By batching the effects that swap on the store, you ensure that each dispatch
+only results in at most one swap, thus one render. However, this approach has
+limitations of its own. Read more about [batching](#batching) above.
 
 <a id="dev-tooling"></a>
 ## Development tooling
