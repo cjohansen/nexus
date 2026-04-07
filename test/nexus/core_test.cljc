@@ -277,6 +277,19 @@
                   meta
                   :nexus/action))))
 
+  (testing "Stores placeholder->resolution as meta data"
+    (is (= (-> {:nexus/placeholders
+                {:value (fn [{:keys [value]}] value)
+                 :number (fn [_ s] (some-> s parse-long))}}
+               (nexus/interpolate {:value "5"} [[:actions/inc [:number [:value]]]])
+               first
+               meta
+               :nexus/interpolations)
+           [{:placeholder [:value]
+             :resolution "5"}
+            {:placeholder [:number "5"]
+             :resolution 5}])))
+
   (testing "Can opt out of interpolation with meta data"
     (is (= (-> {:nexus/placeholders {:number (fn [{:keys [value]}] value)}}
                (nexus/interpolate {:value 3} [[:actions/inc ^:nexus/skip-interpolation [:number]]]))
