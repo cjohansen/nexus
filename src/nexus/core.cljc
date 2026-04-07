@@ -43,21 +43,27 @@
 
         :else state))))
 
-(defn ^:no-doc interpolate-walk [placeholders dispatch-data x]
+(defn ^:no-doc interpolate-walk [placeholders interpolations dispatch-data x]
   (if (-> x meta :nexus/skip-interpolation)
     x
     (let [x' (if (coll? x)
-               (walk/walk #(interpolate-walk placeholders dispatch-data %) identity x)
+               (walk/walk #(interpolate-walk placeholders interpolations dispatch-data %) identity x)
                x)]
       (if-let [f (when (vector? x')
                    (get placeholders (first x')))]
-        (apply f dispatch-data (next x'))
+        (let [resolution (apply f dispatch-data (next x'))]
+          (swap! interpolations conj {:placeholder x'
+                                      :resolution resolution})
+          resolution)
         x'))))
 
 (defn interpolate-1 [{:nexus/keys [placeholders]} dispatch-data action]
-  (let [interpolated (interpolate-walk placeholders dispatch-data action)]
+  (let [interpolations (atom [])
+        interpolated (interpolate-walk placeholders interpolations dispatch-data action)]
     (cond-> interpolated
-      (not= interpolated action) (with-meta {:nexus/action action}))))
+      (not= interpolated action)
+      (with-meta {:nexus/action action
+                  :nexus/interpolations @interpolations}))))
 
 (defn ^:no-doc wrap-action-handler [f ctx]
   (assoc ctx :actions (apply f (:state ctx) (next (:action ctx)))))
