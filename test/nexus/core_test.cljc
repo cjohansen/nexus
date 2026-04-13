@@ -693,7 +693,18 @@
                (nexus/dispatch (atom {:state "State"}) {} [[:effects/doit]])
                :results)
            [{:effect [:effects/doit]
-             :res {:state "State"}}]))))
+             :res {:state "State"}}])))
+
+  (testing "Nested dispatch that expands to no actions should not go into an infinite loop"
+    (is (= (-> {:nexus/system->state deref
+                :nexus/actions {:actions/prepare-it (fn [_] [[:effects/doit]])
+                                :actions/noop (fn [_] [])}
+                :nexus/effects
+                {:effects/doit
+                 (fn [{:keys [dispatch]} _]
+                   (dispatch [[:actions/noop]]))}}
+               (nexus/dispatch (atom {:state "State"}) {} [[:actions/prepare-it]]))
+           {:results [{:effect [:effects/doit], :res {}}]}))))
 
 (deftest dispatch-order
   (testing "Executes effects prior to action expansion"
