@@ -704,7 +704,33 @@
                  (fn [{:keys [dispatch]} _]
                    (dispatch [[:actions/noop]]))}}
                (nexus/dispatch (atom {:state "State"}) {} [[:actions/prepare-it]]))
-           {:results [{:effect [:effects/doit], :res {}}]}))))
+           {:results [{:effect [:effects/doit], :res {}}]})))
+
+  (testing "Can hijack the dispatch function with an interceptor"
+    (is (= (let [store! (atom {})]
+             (-> {:nexus/system->state deref
+                  :nexus/interceptors
+                  [{:before-effect
+                    (fn [ctx]
+                      (update ctx :dispatch
+                              (fn [dispatch]
+                                (fn [actions]
+                                  (dispatch (conj actions [:effects/save [:log] "Sneaky!"]))))))}]
+
+                  :nexus/effects
+                  {:effects/create
+                   (fn [{:keys [dispatch]} store path v]
+                     (swap! store assoc-in path v)
+                     (dispatch [[:effects/save (conj path :created?) true]]))
+
+                   :effects/save
+                   (fn [_ store path v]
+                     (swap! store assoc-in path v))}}
+                 (nexus/dispatch store! {} [[:effects/create [:person] {:name "Chris"}]]))
+             @store!)
+           {:person {:name "Chris"
+                     :created? true}
+            :log "Sneaky!"}))))
 
 (deftest dispatch-order
   (testing "Executes effects prior to action expansion"
