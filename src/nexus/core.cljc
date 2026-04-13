@@ -81,7 +81,7 @@
             ctx (cond-> (update ctx :trace conjv action)
                   (seq errors) (assoc :errors errors))]
         (cond
-          (empty? actions) ctx
+          (empty? actions) (select-keys ctx [:errors :trace])
 
           (not (actions? actions))
           {:errors [{:action action
