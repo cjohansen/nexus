@@ -765,6 +765,26 @@
              @log)
            [:a :b :c :d :e :f :g :h]))))
 
+(deftest system+dispatch-data->state-test
+  (testing "Uses :nexus/system+dispatch-data->state to grab state snapshot"
+    (is (= (let [state (atom nil)]
+             (-> {:nexus/system->state deref
+
+                  :nexus/system+dispatch-data->state
+                  (fn [store dispatch-data]
+                    (assoc @store :now (:now dispatch-data)))
+
+                  :nexus/actions
+                  {:actions/noop (constantly nil)}
+
+                  :nexus/interceptors [{:before-action (fn [ctx]
+                                                         (reset! state (:state ctx))
+                                                         ctx)}]}
+                 (nexus/dispatch (atom {:num 1}) {:now 1000} [[:actions/noop]]))
+             @state)
+           {:num 1
+            :now 1000}))))
+
 (deftest dispatch-order
   (testing "Executes effects prior to action expansion"
     (is (= (h/test-dispatch-order nexus/dispatch [[:fx1] [:fx2] [:ax1]])
