@@ -262,6 +262,11 @@ Where does `dispatch-data` come from? It is the third argument to
  [[:task/update-title "tid33" [:event.target/value]]])
 ```
 
+You can also embed dispatch data in the state snapshot by replacing
+`:nexus/system->state` with `:nexus/system+dispatch-data->state`. This function
+will receive both the system and dispatch data, and is expected to return an
+immutable state snapshot.
+
 #### Calling event methods
 
 Dispatch data is also available to effect functions. Let's say we have a form to
@@ -838,13 +843,15 @@ In this case `path-values` would be:
 
 The system contains your live, mutable application state and services. Nexus
 treats this as an opaque value—it never inspects or modifies it. It is passed to
-effects (to perform work) and to your `:nexus/system->state` function (to
-extract pure data for action handlers).
+effects (to perform work) and to your `:nexus/system->state` or
+`:nexus/system+dispatch-data->state` function (to extract pure data for action
+handlers).
 
 ### State
 
-The result of calling `:nexus/system->state` on your system. The result is
-assumed to be immutable data.
+The result of calling `:nexus/system->state` or
+`:nexus/system+dispatch-data->state` on your system. The result is assumed to be
+immutable data.
 
 ### Dispatch data
 
@@ -1074,6 +1081,9 @@ Include a `:trace` with errors that includes every action and effect that lead
 to an error. This gives full traceability across nested dispatch calls for both
 async and sync calls, and can be leveraged by tooling to properly "connect the
 dots" when errors occur.
+
+Add `:nexus/system+dispatch-data->state` as an alternative to
+`:nexus/system->state`.
 
 ### 2025.11.1
 

@@ -175,7 +175,9 @@
 
 (defn ^:nodoc dispatch-handler [nexus dispatch! ctx]
   (let [batched? (get-batched-effects nexus)
-        get-state (or (some-> (:nexus/system->state nexus)
+        get-state (or (some-> (:nexus/system+dispatch-data->state nexus)
+                              (partial (:system ctx) (:dispatch-data ctx)))
+                      (some-> (:nexus/system->state nexus)
                               (partial (:system ctx)))
                       (constantly nil))]
     (loop [ctx (assoc ctx :state (get-state))
@@ -206,7 +208,9 @@
 
 (defn ^{:indent 3} dispatch [nexus system dispatch-data actions]
   (when (:nexus/actions nexus)
-    (assert (ifn? (:nexus/system->state nexus)) ":nexus/system->state must be a function"))
+    (assert (or (ifn? (:nexus/system->state nexus))
+                (ifn? (:nexus/system+dispatch-data->state nexus)))
+            "Either :nexus/system+dispatch-data->state or :nexus/system->state must be a function"))
   (let [dispatch!
         (fn dispatch! [actions & [disp-data trace]]
           (let [handler {:phase :action-dispatch
