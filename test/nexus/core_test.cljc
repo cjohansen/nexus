@@ -730,7 +730,40 @@
              @store!)
            {:person {:name "Chris"
                      :created? true}
-            :log "Sneaky!"}))))
+            :log "Sneaky!"})))
+
+  (testing "Executes effects expanded from actions in order"
+    (is (= (let [log (atom [])]
+             (-> {:nexus/system->state deref
+                  :nexus/actions
+                  {:actions/add-k
+                   (fn [_ k]
+                     [[:effects/save k nil]])
+
+                   :actions/inc
+                   (fn [state k]
+                     [[:effects/save k (inc (or (get state k) 0))]])
+
+                   :actions/add-ks
+                   (fn [_ ks]
+                     (for [k ks]
+                       [:actions/add-k k]))}
+
+                  :nexus/effects
+                  {:effects/save
+                   (fn [_ store k v]
+                     (swap! store assoc-in k v))}
+
+                  :nexus/interceptors [{:before-effect (fn [ctx]
+                                                         (swap! log conj (second (:effect ctx)))
+                                                         ctx)}]}
+                 (nexus/dispatch (atom {}) {}
+                     [[:actions/inc :a]
+                      [:actions/add-ks [:b :c :d]]
+                      [:actions/add-ks [:e :f :g]]
+                      [:actions/inc :h]]))
+             @log)
+           [:a :b :c :d :e :f :g :h]))))
 
 (deftest dispatch-order
   (testing "Executes effects prior to action expansion"

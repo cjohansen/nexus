@@ -193,7 +193,7 @@
           (let [res (expand-action nexus (:state ctx) ctx action)
                 [bfxs fxs] (divide-by (comp batched? first) (:effects res))]
             (recur (-> (assoc ctx :trace (:trace res))
-                       (update :actions #(into (next %) (:actions res)))
+                       (update :actions #(into (vec (:actions res)) (next %)))
                        (assoc-some :errors (:errors res)))
                    fxs
                    (into batched-effects bfxs)))
