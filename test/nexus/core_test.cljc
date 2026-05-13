@@ -236,7 +236,19 @@
             [:action]
             [:after-action 3 :actions/inc [:effects/save]]
             [:after-action 2 :actions/inc [:effects/save]]
-            [:after-action 1 :actions/inc [:effects/save]]]))))
+            [:after-action 1 :actions/inc [:effects/save]]])))
+
+
+  (testing "Preserves order of residual actions during recursive expansion"
+    ;; A repro / regression test for the bug addressed by https://github.com/cjohansen/nexus/pull/11
+    ;; When recursively expanding actions, action order was being reversed
+    (is (= (-> {:nexus/actions
+                {:actions/outer (fn [_] [[:actions/inner] [:effects/tail]])
+                 :actions/inner (fn [_] [[:effects/a] [:effects/b] [:effects/c]])}}
+               (nexus/expand-action {} {} [:actions/outer])
+               :actions
+               vec)
+           [[:effects/b] [:effects/c] [:effects/tail]]))))
 
 (deftest interpolate-test
   (testing "No-ops when there are no placeholders"
