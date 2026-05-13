@@ -2,7 +2,7 @@
   (:require [clojure.walk :as walk]))
 
 (def conjv (fnil conj []))
-(def intov (fnil into []))
+(defn intov [a b] (into (vec a) b))
 
 (defn assoc-some [m k v]
   (cond-> m
@@ -93,7 +93,7 @@
 
           :else
           (let [res (expand-action nexus state ctx (first actions))
-                remaining-actions (intov (next actions) (:actions res))]
+                remaining-actions (intov (:actions res) (next actions))]
             (cond-> res
               (seq remaining-actions) (assoc :actions remaining-actions)))))
       (-> (select-keys ctx [:errors :trace])
