@@ -66,38 +66,34 @@
                   :nexus/interpolations @interpolations}))))
 
 (defn ^:no-doc wrap-action-handler [f ctx]
-  (assoc ctx :actions (apply f (:state ctx) (next (:action ctx)))))
+  (update ctx :actions #(intov (apply f (:state ctx) (next (:action ctx))) %)))
 
 (defn ^:no-doc expand-action [nexus state ctx action]
   (let [[kind :as action] (interpolate-1 nexus (:dispatch-data ctx) action)]
     (if-let [f (get-in nexus [:nexus/actions kind])]
-      (let [{:keys [action actions errors]}
-            (run-interceptors (-> (select-keys ctx [:errors])
-                                  (assoc :state state :action action))
+      (let [{:keys [action actions] :as res}
+            (run-interceptors (assoc ctx :state state :action action)
               (conj (vec (:nexus/interceptors nexus))
                     {:phase :expand-action
                      :before-action (partial wrap-action-handler f)})
               [:before-action :after-action :action])
-            ctx (cond-> (update ctx :trace conjv action)
-                  (seq errors) (assoc :errors errors))]
+            ctx (-> (assoc res :trace (conjv (:trace ctx) action))
+                    (dissoc :state :queue :stack :action))]
         (cond
-          (empty? actions) (select-keys ctx [:errors :trace])
+          (empty? actions) ctx
 
           (not (actions? actions))
-          {:errors [{:action action
-                     :phase :expand-action
-                     :trace (:trace ctx)
-                     :err (ex-info (str (first action) " should expand to a collection of actions")
-                                   {:res actions
-                                    :action action})}]}
+          (update ctx :errors conjv
+                  {:action action
+                   :phase :expand-action
+                   :trace (:trace ctx)
+                   :err (ex-info (str (first action) " should expand to a collection of actions")
+                                 {:res actions
+                                  :action action})})
 
           :else
-          (let [res (expand-action nexus state ctx (first actions))
-                remaining-actions (intov (:actions res) (next actions))]
-            (cond-> res
-              (seq remaining-actions) (assoc :actions remaining-actions)))))
-      (-> (select-keys ctx [:errors :trace])
-          (assoc :effects [action])))))
+          (expand-action nexus state (update ctx :actions next) (first actions))))
+      (assoc ctx :effects [action]))))
 
 (defn interpolate
   "Walks `actions`, and replaces any forms matching a registered placeholder with
@@ -137,9 +133,8 @@
                       {:phase :execute-effect
                        :before-effect (partial wrap-handler f)})
                 [:before-effect :after-effect :effect])]
-      (cond-> ctx
-        (:res ret) (update :results conjv (into {k v} (select-keys ret [:res])))
-        (:errors ret) (assoc :errors (:errors ret))))
+      (cond-> (dissoc ret :res)
+        (:res ret) (update :results conjv (into {k v} (select-keys ret [:res])))))
     (update ctx :errors conjv
             {:phase :execute-effect
              :effect-k effect-k
@@ -173,7 +168,7 @@
            (-> (dispatch! actions dispatch-data (conjv (:trace ctx) source))
                (select-keys [:results :errors])))))
 
-(defn ^:nodoc dispatch-handler [nexus dispatch! ctx]
+(defn ^:nodoc dispatch-handler [nexus dispatch! {:keys [queue stack] :as ctx}]
   (let [batched? (get-batched-effects nexus)
         get-state (or (some-> (:nexus/system+dispatch-data->state nexus)
                               (partial (:system ctx) (:dispatch-data ctx)))
@@ -185,26 +180,21 @@
            batched-effects []]
       (if-let [effect (first effects)]
         (let [res (execute nexus (->execute-ctx ctx dispatch! effect) effect)]
-          (recur
-           (-> (assoc ctx :state (get-state))
-                       (assoc-some :errors (:errors res))
-                       (assoc :results (:results res)))
-           (next effects)
-           batched-effects))
+          (recur (assoc res :state (get-state))
+                 (next effects)
+                 batched-effects))
         (if-let [action (first (:actions ctx))]
-          (let [res (expand-action nexus (:state ctx) ctx action)
+          (let [res (expand-action nexus (:state ctx) (update ctx :actions next) action)
                 [bfxs fxs] (divide-by (comp batched? first) (:effects res))]
-            (recur (-> (assoc ctx :trace (:trace res))
-                       (update :actions #(into (vec (:actions res)) (next %)))
-                       (assoc-some :errors (:errors res)))
+            (recur (merge ctx res)
                    fxs
                    (into batched-effects bfxs)))
           (-> (reduce
                (fn [ctx batch]
                  (merge ctx (select-keys (execute-batch nexus (->execute-ctx ctx dispatch! effects) (ffirst batch) batch :effects wrap-batched-effect-handler) [:errors :results])))
-               ctx
+               (assoc ctx :queue queue :stack stack)
                (batch-by first batched-effects))
-              (select-keys [:errors :results :queue :stack])))))))
+              (dissoc :actions :state :effect :effects)))))))
 
 (defn ^{:indent 3} dispatch [nexus system dispatch-data actions]
   (when (:nexus/actions nexus)
@@ -221,4 +211,4 @@
                                 trace (assoc :trace trace))
               (conj (vec (:nexus/interceptors nexus)) handler)
               [:before-dispatch :after-dispatch])))]
-    (select-keys (dispatch! actions) [:results :errors])))
+    (dissoc (dispatch! actions) :system :trace :queue :stack :dispatch :dispatch-data)))
