@@ -370,12 +370,15 @@
                 (constantly nil)
                 {:system (atom {:existing "Data"})
                  :actions [[:effects/save [:number] 3]
-                           [:effects/save [:name] "Nexus"]]}))
-           {:results
-            [{:effect [:effects/save [:number] 3]
-              :res {:existing "Data", :number 3}}
-             {:effect [:effects/save [:name] "Nexus"]
-              :res {:existing "Data", :number 3, :name "Nexus"}}]})))
+                           [:effects/save [:name] "Nexus"]]})
+               :results)
+           [{:effect [:effects/save [:number] 3]
+             :res {:existing "Data"
+                   :number 3}}
+            {:effect [:effects/save [:name] "Nexus"]
+             :res {:existing "Data"
+                   :number 3
+                   :name "Nexus"}}])))
 
   (testing "Processes effects one by one"
     (is (= (-> nexus-with-save
@@ -383,15 +386,15 @@
                 (constantly nil)
                 {:system (atom {:existing "Data"})
                  :actions [[:effects/save [:number] 3]
-                           [:effects/save [:name] "Nexus"]]}))
-           {:results
-            [{:effect [:effects/save [:number] 3]
-              :res {:existing "Data"
-                    :number 3}}
-             {:effect [:effects/save [:name] "Nexus"]
-              :res {:existing "Data"
-                    :number 3
-                    :name "Nexus"}}]}))))
+                           [:effects/save [:name] "Nexus"]]})
+               :results)
+           [{:effect [:effects/save [:number] 3]
+             :res {:existing "Data"
+                   :number 3}}
+            {:effect [:effects/save [:name] "Nexus"]
+             :res {:existing "Data"
+                   :number 3
+                   :name "Nexus"}}]))))
 
 (deftest dispatch-test
   (testing "Expands, interpolates and executes action"
@@ -411,10 +414,11 @@
                   :nexus/placeholders {:dispatch/number (fn [{:keys [value]}] value)}}
                  (merge nexus-with-inc)
                  (merge nexus-with-save)
-                 (nexus/dispatch store {:value 5} [[:actions/inc [:dispatch/number]]])))
-           {:results [{:effect [:effects/save [:number] 6]
-                       :res {:step-size 3
-                             :number 6}}]})))
+                 (nexus/dispatch store {:value 5} [[:actions/inc [:dispatch/number]]])
+                 :results))
+           [{:effect [:effects/save [:number] 6]
+             :res {:step-size 3
+                   :number 6}}])))
 
   (testing "Returns errors from effect"
     (is (= (-> {:nexus/system->state deref
@@ -775,7 +779,25 @@
                       [:actions/add-ks [:e :f :g]]
                       [:actions/inc :h]]))
              @log)
-           [:a :b :c :d :e :f :g :h]))))
+           [:a :b :c :d :e :f :g :h])))
+
+  (testing "Can make persistent modifications to the ctx with interceptors"
+    (is (= (let [store (atom {:step-size 3})
+                 log (atom [])]
+             (-> {:nexus/system->state deref
+                  :nexus/interceptors [{:before-dispatch #(assoc % :dispatch-id "dispatch-1")
+                                        :before-action #(assoc % :action-id "action-1")
+                                        :before-effect #(assoc % :effect-id "effect-1")
+                                        :after-dispatch #(do (swap! log conj (select-keys % [:dispatch-id :action-id :effect-id]))
+                                                             %)
+                                        }]}
+                 (merge nexus-with-inc)
+                 (merge nexus-with-save)
+                 (nexus/dispatch store {:value 5} [[:actions/inc 3]]))
+             @log)
+           [{:dispatch-id "dispatch-1"
+             :action-id "action-1"
+             :effect-id "effect-1"}]))))
 
 (deftest system+dispatch-data->state-test
   (testing "Uses :nexus/system+dispatch-data->state to grab state snapshot"
