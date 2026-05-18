@@ -40,8 +40,8 @@ introduction to how it works.
 (require '[nexus.registry :as nxr])
 (require '[replicant.dom :as r])
 
-(defn save [_ store path value]
-  (swap! store assoc-in path value))
+(defn save [_ system path value]
+  (swap! system assoc-in path value))
 
 (defn increment [state path]
   [[:effects/save path (+ (:step state) (get-in state path))]])
@@ -60,9 +60,6 @@ introduction to how it works.
     {:on {:click [[:actions/inc [:number]]]}}
     "Count!"]])
 
-;; App state
-(def store (atom {}))
-
 ;; Handle user input: register effects, actions and placeholders.
 ;; If you don't like registering these globally, the next section
 ;; shows how to use nexus.core, which has no implicit state.
@@ -77,14 +74,18 @@ introduction to how it works.
   (fn [_ value]
     (or (some-> value parse-long) 0)))
 
+;; The `system`, a mutable application object
+(def my-app (atom {}))
+
+;; Specify how an immutable value is derived from the system
 (nxr/register-system->state! deref)
 
 ;; Wire up the render loop
-(r/set-dispatch! #(nxr/dispatch store %1 %2))
-(add-watch store ::render #(r/render js/document.body (render %4)))
+(r/set-dispatch! #(nxr/dispatch my-app %1 %2))
+(add-watch my-app ::render #(r/render js/document.body (render %4)))
 
 ;; Trigger the initial render
-(reset! store {:number 0, :step 1})
+(reset! my-app {:number 0, :step 1})
 ```
 
 <a id="getting-started"></a>
@@ -104,8 +105,8 @@ Effects are functions that process actions and perform side effects on your
 system. They are called with two or more arguments: a context map (we'll look at
 this later), your *system*, and any arguments from the action.
 
-Nexus makes no assumptions about what the *system* is—you will pass it when
-dispatching actions. In this example we'll use an atom, called the `store`.
+Nexus makes no assumptions about what the *system* is—you pass it when
+dispatching actions. In this example we use the `my-app` atom.
 
 The difference between an _action_ and an _effect_ lies in how it is processed.
 They are both expressed as a vector/tuple. In other words `[:ui/alert "Hello"]`
@@ -120,8 +121,8 @@ Put effect implementations in your `nexus` map:
 (def nexus
   {:nexus/effects
    {:task/start-editing
-    (fn [_ store task-id]
-      (swap! store assoc-in [:tasks task-id :task/editing?] true))}})
+    (fn [_ system task-id]
+      (swap! system assoc-in [:tasks task-id :task/editing?] true))}})
 ```
 
 When the action is triggered, e.g. by a DOM event, dispatch it with the `nexus`
@@ -130,8 +131,8 @@ map and your system:
 ```clj
 (require '[nexus.core :as nexus])
 
-(def store (atom {:tasks [,,,]}))
-(nexus/dispatch nexus store {} [[:task/start-editing "tid33"]])
+(def system (atom {:tasks [,,,]}))
+(nexus/dispatch nexus system {} [[:task/start-editing "tid33"]])
 ```
 
 This separates what happens from how, but we can do better—by separating pure
@@ -153,15 +154,15 @@ desired status, and either update the task or flag an error:
 (def nexus
   {:nexus/effects
    {:task/start-editing
-    (fn [_ store task-id]
-      (swap! store assoc-in [:tasks task-id :task/editing?] true))
+    (fn [_ system task-id]
+      (swap! system assoc-in [:tasks task-id :task/editing?] true))
 
     :task/set-status
-    (fn [_ store task-id status]
-      (if (< (count (get-tasks-by-status @store status))
-             (get-status-limit @store status))
-        (swap! store assoc-in [:tasks task-id :task/status] status)
-        (swap! store assoc :errors [:errors/at-limit status])))}})
+    (fn [_ system task-id status]
+      (if (< (count (get-tasks-by-status @system status))
+             (get-status-limit @system status))
+        (swap! system assoc-in [:tasks task-id :task/status] status)
+        (swap! system assoc :errors [:errors/at-limit status])))}})
 ```
 
 Holy swap, Batman! That's a lot of side-effects in one place. Our goal is to
@@ -176,8 +177,8 @@ We will first introduce a low-level effect to update the application state:
 (def nexus
   {:nexus/effects
    {:effects/save
-    (fn [_ store path v]
-      (swap! store assoc-in path v))}})
+    (fn [_ system path v]
+      (swap! system assoc-in path v))}})
 ```
 
 Our two actions can now be expressed in terms of this one effect. We do that by
@@ -258,7 +259,7 @@ Where does `dispatch-data` come from? It is the third argument to
 `nexus.core/dispatch`:
 
 ```clj
-(nexus/dispatch nexus store {:dom-event ,,,}
+(nexus/dispatch nexus system {:dom-event ,,,}
  [[:task/update-title "tid33" [:event.target/value]]])
 ```
 
@@ -313,7 +314,7 @@ One way to achieve this is to use another placeholder:
     (fn [{:keys [now]}]
       now)}})
 
-(nexus/dispatch nexus store {:dom-event ,,,
+(nexus/dispatch nexus system {:dom-event ,,,
                              :now (js/Date.)}
  [[:task/update-title "tid33" [:event.target/value] [:clock/now]]])
 ```
@@ -332,8 +333,8 @@ Another option is to make sure the state always has the current time on it:
 (def nexus
   {,,,
    :nexus/system->state
-   (fn [store]
-     (assoc @store :clock/now (js/Date.)))
+   (fn [system]
+     (assoc @system :clock/now (js/Date.)))
    :nexus/actions
    {:task/edit
     (fn [state task-id data]
@@ -407,8 +408,8 @@ receive a collection of action arguments:
    :nexus/effects
    {:effects/save
     ^:nexus/batch
-    (fn [_ store path-vs]
-      (swap! store
+    (fn [_ system path-vs]
+      (swap! system
        (fn [state]
          (reduce (fn [acc [path v]]
                    (assoc-in acc path v))
@@ -433,7 +434,7 @@ Here's an effect to send a command to the server:
 (def nexus
   {:nexus/effects
    {:effects/command
-    (fn [ctx store command]
+    (fn [ctx system command]
       (js/fetch "/commands"
                 #js {:method "POST"
                      :body (pr-str command)}))}})
@@ -448,7 +449,7 @@ actions with access to the same `nexus`, `system` and `dispatch-data`.
 (def nexus
   {:nexus/effects
    {:effects/command
-    (fn [{:keys [dispatch]} store command]
+    (fn [{:keys [dispatch]} system command]
       (-> (js/fetch "/commands"
                     #js {:method "POST"
                          :body (pr-str command)})
@@ -465,7 +466,7 @@ can't assume that every command should result in a navigation. Instead we want
 to make this decision when issuing the command:
 
 ```clj
-(nexus/dispatch nexus store dispatch-data
+(nexus/dispatch nexus system dispatch-data
  [[:effects/command
    {:command/kind :commands/create-task
     :command/data
@@ -520,7 +521,7 @@ dispatch data:
    :nexus/effects
    {,,,
     :effects/command
-    (fn [{:keys [dispatch]} store command {:keys [on-success]}]
+    (fn [{:keys [dispatch]} system command {:keys [on-success]}]
       (-> (js/fetch "/commands"
                     #js {:method "POST"
                          :body (pr-str command)})
@@ -555,24 +556,24 @@ one-liner:
          '[replicant.dom :as r])
 
 (def nexus ,,,)
-(def store (atom {}))
+(def system (atom {}))
 
 (defn state->ui-data [state]
   [:div
    [:h1 "Hello world!"]])
 
-(defn start [el nexus store]
+(defn start [el nexus system]
   ;; Dispatch Replicant's event data with Nexus
-  (r/set-dispatch! #(nexus/dispatch nexus store %1 %2))
-  (add-watch store ::render #(r/render el (state->ui-data %4)))
-  (swap! store assoc ::started-at (js/Date.)))
+  (r/set-dispatch! #(nexus/dispatch nexus system %1 %2))
+  (add-watch system ::render #(r/render el (state->ui-data %4)))
+  (swap! system assoc ::started-at (js/Date.)))
 ```
 
 Replicant calls the function passed to `set-dispatch!` with a map that contains,
 among other things, the DOM event under the key `:replicant/dom-event`.
 
 Beware that this approach can cause multiple renders for a single dispatch if
-there are more than one effect that swaps on the `store` atom. To ensure each
+there are more than one effect that swaps on the `system` atom. To ensure each
 dispatch only results in a single render (which will give you the best rendering
 performance), you have a few options.
 
@@ -582,15 +583,15 @@ If you only need to trigger rendering from a Nexus dispatch, you can use an
 [interceptor](#interceptors):
 
 ```clj
-(defn start [el nexus store]
+(defn start [el nexus system]
   (let [nexus (update nexus :nexus/interceptors conj
                       {:after-dispatch
                        (fn [ctx]
-                         (r/render el (state->ui-data @store))
+                         (r/render el (state->ui-data @system))
                          ctx)})]
-    (r/set-dispatch! #(nexus/dispatch nexus store %1 %2))
-    (swap! store assoc ::started-at (js/Date.))
-    (r/render el (state->ui-data @store))))
+    (r/set-dispatch! #(nexus/dispatch nexus system %1 %2))
+    (swap! system assoc ::started-at (js/Date.))
+    (r/render el (state->ui-data @system))))
 ```
 
 This will trigger a render for every dispatch, including async ones triggered by
@@ -598,7 +599,7 @@ effects. However, `swap!`-ing on the atom from elsewhere will not trigger a rend
 
 ### Using a render lock
 
-If you'd rather tie rendering to updates to the `store` atom, you can implement
+If you'd rather tie rendering to updates to the `system` atom, you can implement
 a render lock to avoid multiple renders per dispatch. The render lock is
 controlled from an interceptor to ensure that it is also in place for async
 dispatch calls triggered by effects:
@@ -608,25 +609,25 @@ dispatch calls triggered by effects:
   (when-not (:pause-rendering? state)
     (r/render el (state->ui-data state))))
 
-(defn start [el nexus store]
+(defn start [el nexus system]
   (let [nexus (update nexus :nexus/interceptors conj
                       {:before-dispatch
                        (fn [ctx]
-                         (swap! store assoc :pause-rendering? true)
+                         (swap! system assoc :pause-rendering? true)
                          ctx)
 
                        :after-dispatch
                        (fn [ctx]
-                         (swap! store dissoc :pause-rendering?)
+                         (swap! system dissoc :pause-rendering?)
                          ctx)})]
-    (r/set-dispatch! #(nexus/dispatch nexus store %1 %2))
-    (add-watch store ::render #(render el %4))
-    (swap! store assoc ::started-at (js/Date.))))
+    (r/set-dispatch! #(nexus/dispatch nexus system %1 %2))
+    (add-watch system ::render #(render el %4))
+    (swap! system assoc ::started-at (js/Date.))))
 ```
 
 ### Batching effects
 
-By batching the effects that swap on the store, you ensure that each dispatch
+By batching the effects that swap on the system, you ensure that each dispatch
 only results in at most one swap, thus one render. However, this approach has
 limitations of its own. Read more about [batching](#batching) above.
 
@@ -669,8 +670,8 @@ placeholders in a global registry:
 
 (nxr/register-effect! :effects/save
   ^:nexus/batch
-  (fn [_ store path-vs]
-    (swap! store
+  (fn [_ system path-vs]
+    (swap! system
      (fn [state]
        (reduce (fn [acc [path v]]
                  (assoc-in acc path v))
@@ -703,7 +704,7 @@ placeholders in a global registry:
 ```clj
 (replicant.dom/set-dispatch!
  (fn [dispatch-data actions]
-   (nxr/dispatch store dispatch-data actions)))
+   (nxr/dispatch system dispatch-data actions)))
 ```
 
 Using the global registry makes the dev setup much easier, because you don't
