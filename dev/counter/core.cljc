@@ -6,8 +6,8 @@
   {:system->state deref
    :effects
    {:actions/save
-    (fn [_ store path v]
-      (swap! store assoc-in path v))}
+    (fn [_ system path v]
+      (swap! system assoc-in path v))}
 
    :actions
    {:actions/step
@@ -48,7 +48,7 @@
      {:on {:click [[:actions/reset [:number]]]}}
      "Reset"]]])
 
-(defn start [nexus el store]
-  (r/set-dispatch! #(nexus/dispatch nexus store (select-keys %1 [:replicant/dom-event]) %2))
-  (add-watch store ::render #(r/render el (render-ui %4)))
-  (swap! store assoc ::started-at #?(:cljs (js/Date.) :clj (java.util.Date.))))
+(defn start [nexus el system]
+  (r/set-dispatch! #(nexus/dispatch nexus system (select-keys %1 [:replicant/dom-event]) %2))
+  (add-watch system ::render #(r/render el (render-ui %4)))
+  (swap! system assoc ::started-at #?(:cljs (js/Date.) :clj (java.util.Date.))))
