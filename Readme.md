@@ -40,7 +40,7 @@ introduction to how it works.
 (require '[nexus.registry :as nxr])
 (require '[replicant.dom :as r])
 
-(defn save [_ system path value]
+(defn save [_ctx system path value]
   (swap! system assoc-in path value))
 
 (defn increment [state path]
@@ -177,7 +177,7 @@ We will first introduce a low-level effect to update the application state:
 (def nexus
   {:nexus/effects
    {:effects/save
-    (fn [_ system path v]
+    (fn [_ctx system path v]
       (swap! system assoc-in path v))}})
 ```
 
@@ -408,7 +408,7 @@ receive a collection of action arguments:
    :nexus/effects
    {:effects/save
     ^:nexus/batch
-    (fn [_ system path-vs]
+    (fn [_ctx system path-vs]
       (swap! system
        (fn [state]
          (reduce (fn [acc [path v]]
@@ -670,7 +670,7 @@ placeholders in a global registry:
 
 (nxr/register-effect! :effects/save
   ^:nexus/batch
-  (fn [_ system path-vs]
+  (fn [_ctx system path-vs]
     (swap! system
      (fn [state]
        (reduce (fn [acc [path v]]
