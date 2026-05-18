@@ -310,16 +310,16 @@
 (def nexus-with-save
   {:nexus/effects
    {:effects/save
-    (fn [_ store path v]
-      (swap! store assoc-in path v))}})
+    (fn [_ system path v]
+      (swap! system assoc-in path v))}})
 
 (def nexus-with-batched-save
   {:nexus/system->state deref
    :nexus/effects
    {:effects/save
     ^:nexus/batch
-    (fn [_ store path-vs]
-      (swap! store
+    (fn [_ system path-vs]
+      (swap! system
              (fn [state]
                (reduce (fn [s [p v]] (assoc-in s p v)) state path-vs))))}})
 
@@ -335,8 +335,8 @@
   (testing "Returns result of executing effect"
     (is (= (-> {:nexus/effects
                 {:effects/save
-                 (fn [_ store path v]
-                   (swap! store assoc-in path v))}}
+                 (fn [_ system path v]
+                   (swap! system assoc-in path v))}}
                (nexus/execute
                 {:system (atom {:existing "Data"})}
                 [:effects/save [:number] 3])
@@ -398,23 +398,23 @@
 
 (deftest dispatch-test
   (testing "Expands, interpolates and executes action"
-    (is (= (let [store (atom {:step-size 3})]
+    (is (= (let [system (atom {:step-size 3})]
              (-> {:nexus/system->state deref
                   :nexus/placeholders {:dispatch/number (fn [{:keys [value]}] value)}}
                  (merge nexus-with-inc)
                  (merge nexus-with-save)
-                 (nexus/dispatch store {:value 5} [[:actions/inc [:dispatch/number]]]))
-             @store)
+                 (nexus/dispatch system {:value 5} [[:actions/inc [:dispatch/number]]]))
+             @system)
            {:step-size 3
             :number 6})))
 
   (testing "Returns results"
-    (is (= (let [store (atom {:step-size 3})]
+    (is (= (let [system (atom {:step-size 3})]
              (-> {:nexus/system->state deref
                   :nexus/placeholders {:dispatch/number (fn [{:keys [value]}] value)}}
                  (merge nexus-with-inc)
                  (merge nexus-with-save)
-                 (nexus/dispatch store {:value 5} [[:actions/inc [:dispatch/number]]])
+                 (nexus/dispatch system {:value 5} [[:actions/inc [:dispatch/number]]])
                  :results))
            [{:effect [:effects/save [:number] 6]
              :res {:step-size 3
@@ -523,7 +523,7 @@
                      [:effects/fail]]}])))
 
   (testing "Runs interceptors in order"
-    (is (= (let [store (atom {:step-size 3})
+    (is (= (let [system (atom {:step-size 3})
                  log (atom [])]
              (-> {:nexus/system->state deref
                   :nexus/placeholders {:dispatch/number (fn [{:keys [value]}] value)}
@@ -532,7 +532,7 @@
                                        (h/log-interceptor log 3)]}
                  (merge nexus-with-inc)
                  (merge nexus-with-save)
-                 (nexus/dispatch store {:value 5} [[:actions/inc [:dispatch/number]]]))
+                 (nexus/dispatch system {:value 5} [[:actions/inc [:dispatch/number]]]))
              @log)
            [[:before-dispatch 1 [[:actions/inc [:dispatch/number]]]]
             [:before-dispatch 2 [[:actions/inc [:dispatch/number]]]]
@@ -557,7 +557,7 @@
                                  :res {:step-size 3, :number 6}}]]])))
 
   (testing "Dispatches actions recursively with new dispatch data"
-    (is (= (let [store (atom {:step-size 3})
+    (is (= (let [system (atom {:step-size 3})
                  log (atom [])]
              (-> {:nexus/system->state deref
                   :nexus/placeholders {:dd/k (fn [dispatch-data k]
@@ -567,16 +567,16 @@
                                                  [:dd/k k]))}
                   :nexus/interceptors [(h/log-interceptor log 1)]
                   :nexus/effects {:effects/save
-                                  (fn [{:keys [dispatch]} store path v & [{:keys [on-success]}]]
-                                    (let [res (swap! store assoc-in path v)]
+                                  (fn [{:keys [dispatch]} system path v & [{:keys [on-success]}]]
+                                    (let [res (swap! system assoc-in path v)]
                                       (when on-success
                                         (dispatch on-success res))
                                       res))}}
                  (merge nexus-with-inc)
-                 (nexus/dispatch store {:value 5}
-                     [[:effects/save [:number] [:dd/k :value]
-                       {:on-success [[:effects/save [:second-number] [:dd/k :number]]]}]]))
-             [@store @log])
+                 (nexus/dispatch system {:value 5}
+                                 [[:effects/save [:number] [:dd/k :value]
+                                   {:on-success [[:effects/save [:second-number] [:dd/k :number]]]}]]))
+             [@system @log])
            [{:step-size 3
              :number 5
              :second-number 5}
@@ -684,8 +684,8 @@
 
                 :nexus/effects
                 {:effects/save
-                 (fn [_ store path v]
-                   (swap! store assoc-in path v))}}
+                 (fn [_ system path v]
+                   (swap! system assoc-in path v))}}
 
                (nexus/dispatch (atom {:id 0}) {}
                  [[:actions/create-thing "A thing!"]
@@ -723,7 +723,7 @@
            {:results [{:effect [:effects/doit], :res {}}]})))
 
   (testing "Can hijack the dispatch function with an interceptor"
-    (is (= (let [store! (atom {})]
+    (is (= (let [system! (atom {})]
              (-> {:nexus/system->state deref
                   :nexus/interceptors
                   [{:before-effect
@@ -735,15 +735,15 @@
 
                   :nexus/effects
                   {:effects/create
-                   (fn [{:keys [dispatch]} store path v]
-                     (swap! store assoc-in path v)
+                   (fn [{:keys [dispatch]} system path v]
+                     (swap! system assoc-in path v)
                      (dispatch [[:effects/save (conj path :created?) true]]))
 
                    :effects/save
-                   (fn [_ store path v]
-                     (swap! store assoc-in path v))}}
-                 (nexus/dispatch store! {} [[:effects/create [:person] {:name "Chris"}]]))
-             @store!)
+                   (fn [_ system path v]
+                     (swap! system assoc-in path v))}}
+                 (nexus/dispatch system! {} [[:effects/create [:person] {:name "Chris"}]]))
+             @system!)
            {:person {:name "Chris"
                      :created? true}
             :log "Sneaky!"})))
@@ -767,8 +767,8 @@
 
                   :nexus/effects
                   {:effects/save
-                   (fn [_ store k v]
-                     (swap! store assoc-in k v))}
+                   (fn [_ system k v]
+                     (swap! system assoc-in k v))}
 
                   :nexus/interceptors [{:before-effect (fn [ctx]
                                                          (swap! log conj (second (:effect ctx)))
@@ -782,18 +782,17 @@
            [:a :b :c :d :e :f :g :h])))
 
   (testing "Can make persistent modifications to the ctx with interceptors"
-    (is (= (let [store (atom {:step-size 3})
+    (is (= (let [system (atom {:step-size 3})
                  log (atom [])]
              (-> {:nexus/system->state deref
                   :nexus/interceptors [{:before-dispatch #(assoc % :dispatch-id "dispatch-1")
                                         :before-action #(assoc % :action-id "action-1")
                                         :before-effect #(assoc % :effect-id "effect-1")
                                         :after-dispatch #(do (swap! log conj (select-keys % [:dispatch-id :action-id :effect-id]))
-                                                             %)
-                                        }]}
+                                                             %)}]}
                  (merge nexus-with-inc)
                  (merge nexus-with-save)
-                 (nexus/dispatch store {:value 5} [[:actions/inc 3]]))
+                 (nexus/dispatch system {:value 5} [[:actions/inc 3]]))
              @log)
            [{:dispatch-id "dispatch-1"
              :action-id "action-1"
@@ -805,8 +804,8 @@
              (-> {:nexus/system->state deref
 
                   :nexus/system+dispatch-data->state
-                  (fn [store dispatch-data]
-                    (assoc @store :now (:now dispatch-data)))
+                  (fn [system dispatch-data]
+                    (assoc @system :now (:now dispatch-data)))
 
                   :nexus/actions
                   {:actions/noop (constantly nil)}

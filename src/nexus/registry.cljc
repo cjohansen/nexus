@@ -27,5 +27,5 @@
 (defn get-registry []
   @!registry)
 
-(defn dispatch [store dispatch-data actions]
-  (nexus/dispatch (get-registry) store dispatch-data actions))
+(defn dispatch [system dispatch-data actions]
+  (nexus/dispatch (get-registry) system dispatch-data actions))
