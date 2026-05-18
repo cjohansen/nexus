@@ -589,12 +589,12 @@ If you only need to trigger rendering from a Nexus dispatch, you can use an
                          (r/render el (state->ui-data @store))
                          ctx)})]
     (r/set-dispatch! #(nexus/dispatch nexus store %1 %2))
-    (swap! store assoc ::started-at (js/Date.)))
-    (r/render el (state->ui-data @store)))
+    (swap! store assoc ::started-at (js/Date.))
+    (r/render el (state->ui-data @store))))
 ```
 
-This will trigger a render for every dispatch, including async ones triggered be
-effects. However, swap-ing on the atom from elsewhere will not trigger a render.
+This will trigger a render for every dispatch, including async ones triggered by
+effects. However, `swap!`-ing on the atom from elsewhere will not trigger a render.
 
 ### Using a render lock
 
@@ -677,8 +677,8 @@ placeholders in a global registry:
                state path-vs)))))
 
 (nxr/register-placeholder! :event.target/value
-  (fn [{:replicant/keys [dom-node]}]
-    (some-> dom-node .-target .-value)))
+  (fn [{:replicant/keys [dom-event]}]
+    (some-> dom-event .-target .-value)))
 
 (nxr/register-placeholder! :fmt/number
   (fn [_ val]
