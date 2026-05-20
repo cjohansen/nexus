@@ -91,9 +91,11 @@ introduction to how it works.
 <a id="getting-started"></a>
 ## Getting started
 
-Nexus *actions* are data structures that describe what your system should do.
-They're processed as effects—functions that perform side-effects. Actions can
-originate from user events, timers, network responses, or other sources.
+Nexus *actions* are data structures that describe what your system
+should do.
+
+Actions can originate from user events, timers, network responses, or
+other sources.
 
 Actions are vectors of an action type (keyword) and optional arguments:
 
@@ -101,21 +103,26 @@ Actions are vectors of an action type (keyword) and optional arguments:
 [:task/set-status "tid33" :status/in-progress]
 ```
 
-Effects are functions that process actions and perform side effects on your
-system. They are called with two or more arguments: a context map (we'll look at
-this later), your *system*, and any arguments from the action.
+When you dispatch an action in Nexus, it is handled by either:
+
+1. an *action handler*, a pure function that maps system state and
+the action's arguments to other actions.
+2. an *effect handler*, which performs side-effects according to:
+   - a context map (we'll look at this later),
+   - your *system*,
+   - the action's arguments
+
+If the action is handled by an effect handler, we call it an *effect*.
 
 Nexus makes no assumptions about what the *system* is—you pass it when
-dispatching actions. In this example we use the `my-app` atom.
+dispatching actions. In the example above, we use the `my-app` atom.
 
-The difference between an _action_ and an _effect_ lies in how it is processed.
-They are both expressed as a vector/tuple. In other words `[:ui/alert "Hello"]`
-can be an action or an effect, depending on how you've defined `:ui/alert` for
-Nexus.
 
-### Implementing an effect
+### Implementing an effect handler
 
-Put effect implementations in your `nexus` map:
+Let's consider a kanban task tracking [example app](https://github.com/cjohansen/replicant-kanban).
+
+Put effect handlers in your `nexus` map:
 
 ```clj
 (def nexus
@@ -131,17 +138,18 @@ map and your system:
 ```clj
 (require '[nexus.core :as nexus])
 
-(def system (atom {:tasks [,,,]}))
-(nexus/dispatch nexus system {} [[:task/start-editing "tid33"]])
+(def kanban-app (atom {:tasks [,,,]}))
+(nexus/dispatch nexus kanban-app {} [[:task/start-editing "tid33"]])
 ```
 
 This separates what happens from how, but we can do better—by separating pure
-action logic from effectful execution.
+logic from effectful execution.
 
-In Kanban, there are limits to how many tasks you can have in each column at the
-same time, meaning that the `:task/set-status` action is not just a mere
-`assoc-in`. This action needs to check how many tasks we already have with the
-desired status, and either update the task or flag an error:
+In Kanban, there are limits to how many tasks you can have in each
+column at the same time, meaning that the `:task/set-status` action is
+not just a mere `assoc-in`. This action needs to check how many tasks
+we already have with the desired status, and either update the task or
+flag an error:
 
 ```clj
 (defn get-tasks-by-status [state status]
@@ -171,7 +179,8 @@ without changing the world. Let's fix that.
 
 ### Pure actions
 
-We will first introduce a low-level effect to update the application state:
+We will first replace our two effect handlers with a more generic
+effect handler that updates the application state:
 
 ```clj
 (def nexus
@@ -181,12 +190,15 @@ We will first introduce a low-level effect to update the application state:
       (swap! system assoc-in path v))}})
 ```
 
-Our two actions can now be expressed in terms of this one effect. We do that by
-implementing them as _actions_ instead of _effects_. Actions are pure functions
-that return lists of actions — transforming intent into more low-level
-implementations. They're called with an immutable snapshot of your system. This
-means we need to tell Nexus how to acquire the system snapshot. Since our system
-is an atom, `deref` will do the job just fine:
+Then our two domain-specific actions, `:task/start-editing` and
+`:task/set-status`, can now be expressed in terms of this one low-level effect.
+
+We do that by implementing them as *action handlers*, which are pure functions
+that return a list of actions.
+
+Action handlers are called with an immutable snapshot of your system, which
+means we need to tell Nexus how to acquire the system snapshot.  Since our
+system is an atom, `deref` will do the job just fine:
 
 ```clj
 (def nexus
@@ -206,20 +218,33 @@ is an atom, `deref` will do the job just fine:
 ```
 
 Now we also have clean separation between pure business logic and the
-side-effects. Your app will only ever need a handful of effect implementations;
-as your app grows you'll be adding action implementations. Nothing but pure
-functions all the way, baby!
+side-effects. Your app will only ever need a handful of effect handlers; as your
+app grows you'll be adding action handlers. Nothing but pure functions all the
+way, baby!
 
-It's also worth noting that the UI doesn't need to know whether the actions it
-dispatches are directly processed as effects, or if it goes through one or more
-pure transformations. This allows you to start small and grow your system on
-demand, with very little boilerplate.
+It's also worth noting that the data the UI dispatches hasn't
+changed. We still dispatch something like
+
+```clj
+[:task/set-status "tid33" :status/in-progress]
+```
+
+but instead of a hard-to-test effect handler responding to this data,
+we now have an easier-to-test, pure action handler which responds to
+it by yielding an effect like
+
+```clj
+[:effects/save [:tasks "tid33" :task/status] :status/in-progress]
+```
+
+This is what allows you to start small and grow your system on demand,
+with very little boilerplate.
 
 ### Using dispatch data
 
-When using Replicant event handler data, you include actions in the rendered
-hiccup. However, some actions rely on data that isn't available until they
-dispatch.
+When using Replicant event handler data, you include actions in the
+rendered hiccup. However, some actions rely on data that isn't
+available until they dispatch.
 
 Consider this action that updates the task title:
 
@@ -270,7 +295,7 @@ immutable state snapshot.
 
 #### Calling event methods
 
-Dispatch data is also available to effect functions. Let's say we have a form to
+Dispatch data is also available to effect handlers. Let's say we have a form to
 edit the task. Instead of controlling each input, it will use the form submit
 action. To avoid a page refresh on submit we must call `.preventDefault` on the
 event:
@@ -284,7 +309,7 @@ event:
  ,,,]
 ```
 
-Effect functions receive `dispatch-data` as part of their first argument, the
+Effect handlers receive `dispatch-data` as part of their first argument, the
 aforementioned context map:
 
 ```clj
@@ -396,11 +421,11 @@ before you optimize.
 <a id="batching"></a>
 ### Batching effects
 
-`:task/edit` emits multiple `:effects/save` actions. With the current
+`:task/edit` expands into multiple `:effects/save` effects. With the current
 implementation, this will cause several calls to `swap!`. If you want action
 dispatch to be atomic, you can _batch_ `:effects/save`. To do this, mark the
-function with `:nexus/batch` meta data, and change its signature. It will now
-receive a collection of action arguments:
+handler function with `:nexus/batch` meta data, and change its signature. It
+will now receive a collection of effect arguments:
 
 ```clj
 (def nexus
@@ -420,7 +445,7 @@ With this minor change, every `:effects/save` will be handled together,
 resulting in only a single `swap!`.
 
 Batching effects may cause them to be executed out of order. Nexus must expand
-all actions before any batched effect can be executed.
+all actions with action handlers before any batched effect can be executed.
 
 ### Asynchronous effects
 
@@ -428,7 +453,7 @@ Imagine that there is a form to add new tasks. When the form is submitted, we
 want to issue a command to the server to create a new task, and redirect the
 user to a dedicated page for it.
 
-Here's an effect to send a command to the server:
+Here's an effect handler to send a command to the server:
 
 ```clj
 (def nexus
@@ -440,10 +465,10 @@ Here's an effect to send a command to the server:
                      :body (pr-str command)}))}})
 ```
 
-To redirect the user, we need to dispatch a new action when the command
+To redirect the user, we need to dispatch a new effect when the command
 completes, looking up the new location from the response. The `ctx` passed to
-effect functions includes a `:dispatch` function. It lets you trigger new
-actions with access to the same `nexus`, `system` and `dispatch-data`.
+effect handlers includes a `:dispatch` function. It lets you trigger new effects
+with access to the same `nexus`, `system` and `dispatch-data`.
 
 ```clj
 (def nexus
@@ -476,7 +501,7 @@ to make this decision when issuing the command:
                                     ^^^
 ```
 
-Once again, we want to refer to a value that’s only available when the action is
+Once again, we want to refer to a value that’s only available when the effect is
 triggered—without writing imperative glue code. Unfortunately we can't just
 stick a placeholder here, as it would resolved immediately upon dispatching
 `:effects/command` -- there is no way for Nexus to know that `:on-success`
@@ -496,7 +521,7 @@ placeholder when there is not yet a value to replace it with:
         [:http.res/header header]))}})
 ```
 
-We can use the placeholder in the `:on-success` actions:
+We can use the placeholder in the `:on-success` effects:
 
 ```clj
 [[:effects/command
@@ -507,9 +532,9 @@ We can use the placeholder in the `:on-success` actions:
   {:on-success [[:effects/navigate [:http.res/header "Location"]]]}]]
 ```
 
-Finally, in the command effect, we can provide _additional dispatch data_ when
-dispatching new actions. This dispatch data will be merged into the original
-dispatch data:
+Finally, in the command effect handler, we can provide _additional dispatch
+data_ when dispatching new effects. This dispatch data will be merged into the
+original dispatch data:
 
 ```clj
 (def nexus
@@ -531,8 +556,8 @@ dispatch data:
                (dispatch on-success {:response response}))))))}})
 ```
 
-The effect function now accepts a fourth argument that matches the extra options
-in the dispatched action:
+The effect handler now accepts a fourth argument that matches the extra options
+in the dispatched effect:
 
 ```clj
 [:effects/command command opts]
@@ -662,8 +687,8 @@ Compiling the `nexus` map and passing it by hand makes things explicit at the
 cost of some boilerplate on your end. Maybe you're willing to swallow a little
 implicitness for a lot of convenience? Then `nexus.registry` is for you.
 
-`nexus.registry` provides some wrappers that collect actions, effects and
-placeholders in a global registry:
+`nexus.registry` provides some wrappers that collect effect handlers,
+action handlers, and placeholders in a global registry:
 
 ```clj
 (require '[nexus.registry :as nxr])
@@ -740,8 +765,8 @@ for all.
 
 ### Standardized data flow
 
-Every app needs some kind of action dispatch system. Even if we all agree that
-an action is a vector with a keyword identifier and some arguments, there are
+Every app needs some kind of effect dispatch system. Even if we all agree that
+an effect is a vector with a keyword identifier and some arguments, there are
 many ways to build the dispatch pipeline. There’s little value in making it
 slightly different in every project—but doing so does come with a cognitive
 cost.
@@ -799,17 +824,16 @@ Actions were deliberately not named "events" for two reasons:
    event, we have a "login" action - a clear instruction to the system.
 2. The word "event" is already heavily loaded in the context of a browser. In
    fact, actions typically will be dispatched in reaction to a DOM event. Having
-   multiple different artifacts that are all named event does not make
-   writing code easier.
+   multiple different artifacts that are all named event does not make writing
+   code easier.
 
 Action handlers are pure functions that take the state (see below) and any
-arguments from the action, and return a list of new actions.
+arguments from the action, and return a list of actions/effects.
 
 ### Effect
 
-When an action reaches an effect handler to be processed for its side-effects,
-we call it an effect. In other words, "effect" and "action" describe the same
-data structure in different phases of processing.
+When an action reaches an effect handler to be processed for its
+side-effects, we call it an effect.
 
 An effect handler is a function that receives `ctx`, the live system and any
 action arguments and uses them to perform side-effects:
@@ -822,7 +846,7 @@ action arguments and uses them to perform side-effects:
 
 Here `path` would be bound to `[:number]` and `value` to `3`.
 
-When effect functions are batched, they receive a collection of arguments
+When an effect handler is batched, it receives a collection of arguments
 instead:
 
 ```clj
