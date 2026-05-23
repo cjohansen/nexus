@@ -73,10 +73,10 @@
                     (swap! !last-dispatch-order conj [:exec-effect effect])
                     ctx)})
 
-(def !store (atom {:executions 0}))
+(def !system (atom {:executions 0}))
 
 (def nexus
-  {:nexus/system->state (fn [{:keys [!store]}] @!store)
+  {:nexus/system->state (fn [{:keys [!system]}] @!system)
 
    :nexus/interceptors [dispatch-history-interceptor]
 
@@ -102,6 +102,6 @@
                                [:fx4]])}})
 
 (defn test-dispatch-order [f actions]
-  (let [!store (atom {:executions 0})]
-    (f nexus {:!store !store} {} actions)
+  (let [!system (atom {:executions 0})]
+    (f nexus {:!system !system} {} actions)
     @!last-dispatch-order))
