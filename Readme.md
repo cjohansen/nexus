@@ -1129,3 +1129,5 @@ Interpolate placeholders in between each action expansion.
 
 Copyright © 2025-2026 Christian Johansen, Magnar Sveen, and Teodor Heggelund.
 Distributed under the [MIT License](https://opensource.org/license/mit).
+
+Nexus is software written for and by humans.
