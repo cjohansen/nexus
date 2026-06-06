@@ -1,20 +1,19 @@
 (ns nexus.core
   (:require [clojure.walk :as walk]))
 
-(def conjv (fnil conj []))
-(defn intov [a b] (into (vec a) b))
-
-(defn assoc-some [m k v]
-  (cond-> m
-    (and v (when (coll? v)
-             (seq v)))
-    (assoc k v)))
+(def ^:nodoc conjv (fnil conj []))
 
 (defn action? [data]
   (and (vector? data) (keyword? (first data))))
 
 (defn actions? [data]
   (and (sequential? data) (every? action? data)))
+
+(defn ^:no-doc get-batched-effects [nexus]
+  (->> (:nexus/effects nexus)
+       (filter (comp :nexus/batch meta val))
+       (mapv key)
+       set))
 
 (defn ^{:indent 1 :no-doc true} run-interceptors [ctx interceptors [before after k]]
   (letfn [(invoke [f state phase interceptor]
@@ -25,10 +24,11 @@
                 (update state :errors conjv
                         (into (cond-> {:phase phase
                                        :err e
-                                       :trace (conjv (:trace ctx) (ctx k))}
+                                       :trace (:trace state)}
                                 k (assoc k (ctx k)))
                               (select-keys interceptor [:id]))))))]
-    (loop [state (merge ctx {:queue interceptors :stack ()})]
+    (loop [state (cond-> (assoc ctx :queue interceptors :stack ())
+                   k (update :trace conjv (ctx k)))]
       (cond
         (:queue state)
         (let [interceptor (first (:queue state))
@@ -57,43 +57,13 @@
           resolution)
         x'))))
 
-(defn interpolate-1 [{:nexus/keys [placeholders]} dispatch-data action]
+(defn ^:no-doc interpolate-1 [{:nexus/keys [placeholders]} dispatch-data action]
   (let [interpolations (atom [])
         interpolated (interpolate-walk placeholders interpolations dispatch-data action)]
     (cond-> interpolated
       (not= interpolated action)
       (with-meta {:nexus/action action
                   :nexus/interpolations @interpolations}))))
-
-(defn ^:no-doc wrap-action-handler [f ctx]
-  (update ctx :actions #(intov (apply f (:state ctx) (next (:action ctx))) %)))
-
-(defn ^:no-doc expand-action [nexus state ctx action]
-  (let [[kind :as action] (interpolate-1 nexus (:dispatch-data ctx) action)]
-    (if-let [f (get-in nexus [:nexus/actions kind])]
-      (let [{:keys [action actions] :as res}
-            (run-interceptors (assoc ctx :state state :action action)
-              (conj (vec (:nexus/interceptors nexus))
-                    {:phase :expand-action
-                     :before-action (partial wrap-action-handler f)})
-              [:before-action :after-action :action])
-            ctx (-> (assoc res :trace (conjv (:trace ctx) action))
-                    (dissoc :state :queue :stack :action))]
-        (cond
-          (empty? actions) ctx
-
-          (not (actions? actions))
-          (update ctx :errors conjv
-                  {:action action
-                   :phase :expand-action
-                   :trace (:trace ctx)
-                   :err (ex-info (str (first action) " should expand to a collection of actions")
-                                 {:res actions
-                                  :action action})})
-
-          :else
-          (expand-action nexus state (update ctx :actions next) (first actions))))
-      (assoc ctx :effects [action]))))
 
 (defn interpolate
   "Walks `actions`, and replaces any forms matching a registered placeholder with
@@ -103,98 +73,74 @@
   [nexus dispatch-data actions]
   (mapv #(interpolate-1 nexus dispatch-data %) actions))
 
-(defn ^:no-doc get-batched-effects [nexus]
-  (->> (:nexus/effects nexus)
-       (filter (comp :nexus/batch meta val))
-       (mapv key)
-       set))
+(defn ^:nodoc get-state [nexus ctx]
+  (or (when-let [f (:nexus/system+dispatch-data->state nexus)]
+        (f (:system ctx) (:dispatch-data ctx)))
+      (when-let [f (:nexus/system->state nexus)]
+        (f (:system ctx)))))
 
-(def effect-ks
-  #{:system :dispatch-data :dispatch :errors :results
-    ;; For backwards compatibility, see tests for explanation
-    :state})
+(defn ^:nodoc reset-ctx-nesting [{:keys [queue stack trace]} ctx]
+  (assoc ctx :queue queue :stack stack :trace trace))
 
-(defn ^:no-doc wrap-batched-effect-handler [f ctx]
-  (assoc ctx :res (f (select-keys ctx effect-ks)
-                     (:system ctx)
-                     (mapv next (:effects ctx)))))
+(declare dispatch-actions)
 
-(defn ^:no-doc wrap-effect-handler [f ctx]
-  (assoc ctx :res (apply f (select-keys ctx effect-ks)
-                         (:system ctx)
-                         (next (:effect ctx)))))
+(defn ^:nodoc dispatch-action [nexus dispatch! ctx action-f action]
+  (run-interceptors (assoc ctx :action action)
+    (conj (vec (:nexus/interceptors nexus))
+          {:phase :expand-action
+           :before-action
+           (fn [ctx*]
+             (let [actions (apply action-f (:state ctx*) (next (:action ctx*)))]
+               (if (not (actions? actions))
+                 (update ctx* :errors conjv
+                         {:action action
+                          :phase :expand-action
+                          :trace (:trace ctx*)
+                          :err (ex-info (str (first action) " should expand to a collection of actions")
+                                        {:res actions
+                                         :action action})})
+                 (->> (assoc ctx* :actions actions)
+                      (dispatch-actions nexus dispatch!)
+                      (reset-ctx-nesting ctx)))))})
+    [:before-action :after-action :action]))
 
-(defn ^:no-doc execute-batch [nexus ctx effect-k effects k wrap-handler]
-  (if-let [f (get-in nexus [:nexus/effects effect-k])]
-    (let [v (cond-> effects
-              (= k :effect) first)
-          ret (run-interceptors (assoc ctx k v)
-                (conj (vec (:nexus/interceptors nexus))
-                      {:phase :execute-effect
-                       :before-effect (partial wrap-handler f)})
-                [:before-effect :after-effect :effect])]
-      (cond-> (dissoc ret :res)
-        (:res ret) (update :results conjv (into {k v} (select-keys ret [:res])))))
-    (update ctx :errors conjv
-            {:phase :execute-effect
-             :effect-k effect-k
-             :err (ex-info "No such effect" {:available-effects (keys (:nexus/effects nexus))})})))
+(defn ^:nodoc ->execute-ctx [ctx]
+  (update ctx :dispatch
+          (fn [dispatch]
+            (fn [actions & [dispatch-data]]
+              (-> (dispatch actions dispatch-data (:trace ctx))
+                  (select-keys [:results :errors]))))))
 
-(defn execute [nexus ctx [effect-k :as effect]]
-  {:pre [(action? effect)]}
-  (if (get-in nexus [:nexus/effects effect-k])
-    (execute-batch nexus ctx effect-k [effect] :effect wrap-effect-handler)
-    (update ctx :errors conjv
-            {:phase :execute-effect
-             :effect-k effect-k
-             :err (ex-info "No such effect" {:available-effects (keys (:nexus/effects nexus))})})))
+(defn execute-effect [nexus dispatch! ctx effect-f effect]
+  (-> (assoc ctx :dispatch dispatch!)
+      (assoc :effect effect :dispatch dispatch!)
+      (run-interceptors
+          (conj (vec (:nexus/interceptors nexus))
+                {:phase :execute-effect
+                 :before-effect
+                 (fn [{:keys [system effect] :as ctx*}]
+                   (let [result (apply effect-f (->execute-ctx ctx*) system (next effect))]
+                     (-> (assoc ctx* :res result :state (get-state nexus ctx*))
+                         (update :results conjv {:effect effect :res result}))))})
+        [:before-effect :after-effect :effect])
+      (dissoc :effect :res)))
 
-(defn ^{:indent 1 :nodoc true} batch-by [f xs]
-  (let [[m order]
-        (reduce (fn [[m order] x]
-                  (let [k (f x)]
-                    [(update m k conjv x)
-                     (cond-> order
-                       (not (contains? m k)) (conj k))]))
-                [{} []]
-                xs)]
-    (mapv m order)))
-
-(def ^:nodoc divide-by (juxt filter remove))
-
-(defn ^:nodoc ->execute-ctx [ctx dispatch! source]
-  (assoc ctx :dispatch
-         (fn [actions & [dispatch-data]]
-           (-> (dispatch! actions dispatch-data (conjv (:trace ctx) source))
-               (select-keys [:results :errors])))))
-
-(defn ^:nodoc dispatch-handler [nexus dispatch! {:keys [queue stack] :as ctx}]
-  (let [batched? (get-batched-effects nexus)
-        get-state (or (some-> (:nexus/system+dispatch-data->state nexus)
-                              (partial (:system ctx) (:dispatch-data ctx)))
-                      (some-> (:nexus/system->state nexus)
-                              (partial (:system ctx)))
-                      (constantly nil))]
-    (loop [ctx (assoc ctx :state (get-state))
-           effects []
-           batched-effects []]
-      (if-let [effect (first effects)]
-        (let [res (execute nexus (->execute-ctx ctx dispatch! effect) effect)]
-          (recur (assoc res :state (get-state))
-                 (next effects)
-                 batched-effects))
-        (if-let [action (first (:actions ctx))]
-          (let [res (expand-action nexus (:state ctx) (update ctx :actions next) action)
-                [bfxs fxs] (divide-by (comp batched? first) (:effects res))]
-            (recur (merge ctx res)
-                   fxs
-                   (into batched-effects bfxs)))
-          (-> (reduce
-               (fn [ctx batch]
-                 (merge ctx (select-keys (execute-batch nexus (->execute-ctx ctx dispatch! effects) (ffirst batch) batch :effects wrap-batched-effect-handler) [:errors :results])))
-               (assoc ctx :queue queue :stack stack)
-               (batch-by first batched-effects))
-              (dissoc :actions :state :effect :effects)))))))
+(defn dispatch-actions [nexus dispatch! {:keys [queue stack] :as ctx}]
+  (-> (reduce
+       (fn [ctx action]
+         (let [[action-k :as action] (interpolate-1 nexus (:dispatch-data ctx) action)]
+           (or
+            (when-let [action-f (get-in nexus [:nexus/actions action-k])]
+              (dispatch-action nexus dispatch! ctx action-f action))
+            (when-let [effect-f (get-in nexus [:nexus/effects action-k])]
+              (execute-effect nexus dispatch! ctx effect-f action))
+            (update ctx :errors conjv
+                    {:phase :execute-effect
+                     :effect-k action-k
+                     :err (ex-info "No such effect" {:available-effects (keys (:nexus/effects nexus))})}))))
+       (assoc ctx :state (get-state nexus ctx))
+       (:actions ctx))
+      (assoc :queue queue :stack stack)))
 
 (defn ^{:indent 3} dispatch [nexus system dispatch-data actions]
   (when (:nexus/actions nexus)
@@ -204,11 +150,11 @@
   (let [dispatch!
         (fn dispatch! [actions & [disp-data trace]]
           (let [handler {:phase :action-dispatch
-                         :before-dispatch (partial dispatch-handler nexus dispatch!)}]
+                         :before-dispatch (partial dispatch-actions nexus dispatch!)}]
             (run-interceptors (cond-> {:system system
                                        :dispatch-data (merge dispatch-data disp-data)
                                        :actions actions}
                                 trace (assoc :trace trace))
               (conj (vec (:nexus/interceptors nexus)) handler)
               [:before-dispatch :after-dispatch])))]
-    (dissoc (dispatch! actions) :system :trace :queue :stack :dispatch :dispatch-data)))
+    (dissoc (dispatch! actions) :system :state :trace :queue :stack :dispatch :dispatch-data :action :actions)))
