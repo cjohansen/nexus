@@ -108,7 +108,7 @@
   (update ctx :dispatch
           (fn [dispatch]
             (fn [actions & [dispatch-data]]
-              (-> (dispatch actions dispatch-data (:trace ctx))
+              (-> (dispatch actions dispatch-data (dissoc ctx :action :actions :effect :stack :queue))
                   (select-keys [:results :errors]))))))
 
 (defn execute-effect [nexus dispatch! ctx effect-f effect]
@@ -148,13 +148,13 @@
                 (ifn? (:nexus/system+dispatch-data->state nexus)))
             "Either :nexus/system+dispatch-data->state or :nexus/system->state must be a function"))
   (let [dispatch!
-        (fn dispatch! [actions & [disp-data trace]]
+        (fn dispatch! [actions & [disp-data parent-ctx]]
           (let [handler {:phase :action-dispatch
                          :before-dispatch (partial dispatch-actions nexus dispatch!)}]
-            (run-interceptors (cond-> {:system system
-                                       :dispatch-data (merge dispatch-data disp-data)
-                                       :actions actions}
-                                trace (assoc :trace trace))
+            (run-interceptors (assoc parent-ctx
+                                     :system system
+                                     :dispatch-data (merge dispatch-data disp-data)
+                                     :actions actions)
               (conj (vec (:nexus/interceptors nexus)) handler)
               [:before-dispatch :after-dispatch])))]
     (dissoc (dispatch! actions) :system :state :trace :queue :stack :dispatch :dispatch-data :action :actions)))
