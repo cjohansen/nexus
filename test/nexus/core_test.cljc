@@ -1,8 +1,27 @@
 (ns nexus.core-test
-  (:require [clojure.string :as str]
-            [clojure.test :refer [deftest is testing]]
+  (:require [clojure.test :refer [deftest is testing]]
             [nexus.core :as nexus]
             [nexus.test-helper :as h]))
+
+(def test-nexus
+  {:nexus/system->state deref
+
+   :nexus/placeholders
+   {:dispatch/number (fn [{:keys [value]}] value)}
+
+   :nexus/effects
+   {:effects/save
+    (fn [_ system path v]
+      (swap! system assoc-in path v))}
+
+   :nexus/actions
+   {:actions/plus
+    (fn [state path n]
+      [[:effects/save path (+ (get-in state path 0) n)]])
+
+    :actions/inc
+    (fn [_ path]
+      [[:actions/plus path 1]])}})
 
 (deftest action?-test
   (testing "Detects action"
@@ -19,236 +38,6 @@
     (is (true? (nexus/actions? [[:actions/doit "Now!"]])))
     (is (true? (nexus/actions? [[:actions/doit "Now!"]
                                 [:actions/also "Do" :this]])))))
-
-(def nexus-with-inc
-  {:nexus/actions
-   {:actions/inc
-    (fn [state n]
-      [[:effects/save [:number] (+ (or (:base-n state) 0) n 1)]])}})
-
-(deftest expand-action-test
-  (testing "Assumes effect without any expansions"
-    (is (= (->> [:actions/test :it]
-                (nexus/expand-action {} {} {})
-                :effects)
-           [[:actions/test :it]])))
-
-  (testing "Expands action"
-    (is (= (-> {:nexus/actions
-                {:actions/test
-                 (fn [_ arg]
-                   [[:actions/store (str/upper-case arg)]])}}
-               (nexus/expand-action {} {} [:actions/test "it"])
-               :effects)
-           [[:actions/store "IT"]])))
-
-  (testing "Passes state to action handler"
-    (is (= (-> {:nexus/actions
-                {:actions/test
-                 (fn [state arg]
-                   [[:actions/store (:n (:config state)) arg]])}}
-               (nexus/expand-action {:config {:n 2}} {} [:actions/test "it"])
-               :effects)
-           [[:actions/store 2 "it"]])))
-
-  (testing "Returns error when action handler does not return collection of actions"
-    (is (= (-> {:nexus/actions
-                {:actions/test
-                 (fn [{:keys [config]} arg]
-                   [:actions/store (:n config) arg])}}
-               (nexus/expand-action {:config {:n 2}} {} [:actions/test "it"])
-               h/datafy-errors)
-           {:errors
-            [{:action [:actions/test "it"]
-              :trace [[:actions/test "it"]]
-              :phase :expand-action
-              :err {:message ":actions/test should expand to a collection of actions"
-                    :data {:res [:actions/store 2 "it"]
-                           :action [:actions/test "it"]}}}]})))
-
-  (testing "Expands action to empty list of effects"
-    (is (empty? (-> {:nexus/actions
-                     {:actions/test
-                      (fn [_ _] [])}}
-                    (nexus/expand-action {:config {:n 2}} {} [:actions/test "it"])
-                    :effects))))
-
-  (testing "Expands actions recursively"
-    (is (= (-> {:nexus/actions
-                {:actions/inc
-                 (fn [_ n]
-                   [[:actions/plus n 1]])
-                 :actions/plus
-                 (fn [_ a b]
-                   [[:actions/store "n" (+ a b)]])}}
-               (nexus/expand-action {} {} [:actions/inc 2])
-               :effects)
-           [[:actions/store "n" 3]])))
-
-  (testing "Expands only first action"
-    (is (= (-> {:nexus/actions
-                {:actions/inc-much
-                 (fn [_ n]
-                   [[:actions/plus n 1]
-                    [:actions/plus n 2]])
-                 :actions/plus
-                 (fn [_ a b]
-                   [[:actions/store "n" (+ a b)]])}}
-               (nexus/expand-action {} {} [:actions/inc-much 2]))
-           {:effects [[:actions/store "n" 3]]
-            :actions [[:actions/plus 2 2]]
-            :trace [[:actions/inc-much 2]
-                    [:actions/plus 2 1]]})))
-
-  (testing "Interpolates placeholders in expanded actions"
-    (is (= (-> {:nexus/actions
-                {:actions/inc
-                 (fn [_ n]
-                   [[:actions/plus n [:placeholders/one]]])
-                 :actions/plus
-                 (fn [_ a b]
-                   [[:actions/store "n" (+ a b)]])}
-                :nexus/placeholders
-                {:placeholders/one (fn [dispatch-data] (:one dispatch-data))}}
-               (nexus/expand-action {} {:dispatch-data {:one 1}} [:actions/inc 2])
-               :effects)
-           [[:actions/store "n" 3]])))
-
-  (testing "Returns errors from bad action handler"
-    (is (= (-> {:nexus/actions
-                {:actions/inc
-                 (fn [_ _]
-                   (throw (ex-info "Boom!" {})))}}
-               (nexus/expand-action {} {} [:actions/inc 2])
-               h/datafy-errors)
-           {:errors [{:phase :expand-action
-                      :action [:actions/inc 2]
-                      :trace [[:actions/inc 2]]
-                      :err {:message "Boom!"
-                            :data {}}}]})))
-
-  (testing "Calls before-interceptor before action handler"
-    (is (= (-> (h/with-interceptor nexus-with-inc :before-action
-                 #(assoc-in % [:state :base-n] 2))
-               (nexus/expand-action {} {} [:actions/inc 9])
-               :effects)
-           [[:effects/save [:number] 12]])))
-
-  (testing "Calls after-interceptor after action handler"
-    (is (= (let [log (atom [])]
-             (-> (h/with-interceptor nexus-with-inc :after-action
-                   (fn [context]
-                     (swap! log conj {:in (:action context) :out (:actions context)})
-                     context))
-                 (nexus/expand-action {} {} [:actions/inc 9]))
-             @log)
-           [{:in [:actions/inc 9]
-             :out [[:effects/save [:number] 10]]}])))
-
-  (testing "Does not call interceptors for actions that have no handlers"
-    (is (= (let [log (atom [])]
-             (-> {:nexus/interceptors
-                  [{:before-action
-                    (fn [ctx]
-                      (swap! log conj ctx))}]}
-                 (nexus/expand-action {:state "Here"} {} [:actions/inc 2]))
-             @log)
-           [])))
-
-  (testing "Returns error from before-action interceptor"
-    (is (= (-> (h/with-interceptor nexus-with-inc :before-action
-                 (fn [ctx]
-                   (throw (ex-info "Boom!" {:ctx ctx}))))
-               (nexus/expand-action {:state "Here"} {} [:actions/inc 2])
-               h/datafy-errors)
-           {:effects [[:effects/save [:number] 3]]
-            :errors
-            [{:phase :before-action
-              :err
-              {:message "Boom!"
-               :data
-               {:ctx
-                {:state {:state "Here"}
-                 :action [:actions/inc 2]
-                 :queue [{:phase :expand-action
-                          :before-action ::h/fn}]
-                 :stack [{:before-action ::h/fn}]}}}
-              :action [:actions/inc 2]
-              :trace [[:actions/inc 2]]}]})))
-
-  (testing "Returns error from after-action interceptor"
-    (is (= (-> (h/with-interceptor nexus-with-inc :after-action
-                 (fn [ctx]
-                   (throw (ex-info "Boom!" {:ctx ctx})))
-                 :logger)
-               (nexus/expand-action {:state "Here"} {} [:actions/inc 2])
-               h/datafy-errors)
-           {:effects [[:effects/save [:number] 3]]
-            :errors
-            [{:phase :after-action
-              :id :logger
-              :err
-              {:message "Boom!"
-               :data
-               {:ctx
-                {:state {:state "Here"}
-                 :action [:actions/inc 2]
-                 :queue nil
-                 :stack nil
-                 :actions [[:effects/save [:number] 3]]}}}
-              :action [:actions/inc 2]
-              :trace [[:actions/inc 2]]}]})))
-
-  (testing "Allows interceptor to abort action expansion flow"
-    (is (= (-> (h/with-interceptor nexus-with-inc :before-action
-                 #(throw (ex-info "Boom!" {:ctx %}))
-                 :logger)
-               (h/with-interceptor :before-action
-                   #(cond-> %
-                      (:errors %) (dissoc :queue :stack))
-                 :abort-early)
-               (nexus/expand-action {:state "Here"} {} [:actions/inc 2])
-               h/datafy-errors
-               (update-in [:errors 0 :err] select-keys [:message]))
-           ;; No effects!
-           {:errors
-            [{:id :logger
-              :phase :before-action
-              :action [:actions/inc 2]
-              :trace [[:actions/inc 2]]
-              :err {:message "Boom!"}}]})))
-
-  (testing "Calls interceptors in order"
-    (is (= (let [log (atom [])]
-             (-> {:nexus/actions
-                  {:actions/inc
-                   (fn [state n]
-                     (swap! log conj [:action])
-                     [[:effects/save [:number] (+ (or (:base-n state) 0) n 1)]])}
-                  :nexus/interceptors [(h/log-interceptor log 1)
-                                       (h/log-interceptor log 2)
-                                       (h/log-interceptor log 3)]}
-                 (nexus/expand-action {} {} [:actions/inc 9]))
-             @log)
-           [[:before-action 1 :actions/inc]
-            [:before-action 2 :actions/inc]
-            [:before-action 3 :actions/inc]
-            [:action]
-            [:after-action 3 :actions/inc [:effects/save]]
-            [:after-action 2 :actions/inc [:effects/save]]
-            [:after-action 1 :actions/inc [:effects/save]]])))
-
-
-  (testing "Preserves order of residual actions during recursive expansion"
-    ;; A repro / regression test for the bug addressed by https://github.com/cjohansen/nexus/pull/11
-    ;; When recursively expanding actions, action order was being reversed
-    (is (= (-> {:nexus/actions
-                {:actions/outer (fn [_] [[:actions/inner] [:effects/tail]])
-                 :actions/inner (fn [_] [[:effects/a] [:effects/b] [:effects/c]])}}
-               (nexus/expand-action {} {} [:actions/outer])
-               :actions
-               vec)
-           [[:effects/b] [:effects/c] [:effects/tail]]))))
 
 (deftest interpolate-test
   (testing "No-ops when there are no placeholders"
@@ -307,118 +96,231 @@
                (nexus/interpolate {:value 3} [[:actions/inc ^:nexus/skip-interpolation [:number]]]))
            [[:actions/inc [:number]]]))))
 
-(def nexus-with-save
-  {:nexus/effects
-   {:effects/save
-    (fn [_ system path v]
-      (swap! system assoc-in path v))}})
-
-(def nexus-with-batched-save
-  {:nexus/system->state deref
-   :nexus/effects
-   {:effects/save
-    ^:nexus/batch
-    (fn [_ system path-vs]
-      (swap! system
-             (fn [state]
-               (reduce (fn [s [p v]] (assoc-in s p v)) state path-vs))))}})
-
-(deftest execute-test
-  (testing "Fails when there is no implementation"
-    (is (= (-> (nexus/execute {} {:system (atom {})} [:effects/save [:number] 3])
-               h/datafy-errors)
-           {:errors [{:phase :execute-effect
-                      :effect-k :effects/save
-                      :err {:message "No such effect"
-                            :data {:available-effects nil}}}]})))
-
-  (testing "Returns result of executing effect"
-    (is (= (-> {:nexus/effects
-                {:effects/save
-                 (fn [_ system path v]
-                   (swap! system assoc-in path v))}}
-               (nexus/execute
-                {:system (atom {:existing "Data"})}
-                [:effects/save [:number] 3])
-               :results)
-           [{:effect [:effects/save [:number] 3]
-             :res {:existing "Data"
-                   :number 3}}])))
-
-  (testing "Calls interceptors in order"
-    (is (= (let [log (atom [])]
-             (-> nexus-with-save
-                 (assoc :nexus/interceptors
-                        [(h/log-interceptor log 1)
-                         (h/log-interceptor log 2)
-                         (h/log-interceptor log 3)])
-                 (nexus/execute
-                  {:system (atom {:existing "Data"})}
-                  [:effects/save [:number] 9]))
-             @log)
-           [[:before-effect 1 :effects/save]
-            [:before-effect 2 :effects/save]
-            [:before-effect 3 :effects/save]
-            [:after-effect 3 :effects/save {:existing "Data", :number 9}]
-            [:after-effect 2 :effects/save {:existing "Data", :number 9}]
-            [:after-effect 1 :effects/save {:existing "Data", :number 9}]]))))
-
-(deftest dispatch-handler-test
-  (testing "Expands action and executes effect"
-    (is (= (-> nexus-with-save
-               (nexus/dispatch-handler
-                (constantly nil)
-                {:system (atom {:existing "Data"})
-                 :actions [[:effects/save [:number] 3]
-                           [:effects/save [:name] "Nexus"]]})
-               :results)
-           [{:effect [:effects/save [:number] 3]
-             :res {:existing "Data"
-                   :number 3}}
-            {:effect [:effects/save [:name] "Nexus"]
-             :res {:existing "Data"
-                   :number 3
-                   :name "Nexus"}}])))
-
-  (testing "Processes effects one by one"
-    (is (= (-> nexus-with-save
-               (nexus/dispatch-handler
-                (constantly nil)
-                {:system (atom {:existing "Data"})
-                 :actions [[:effects/save [:number] 3]
-                           [:effects/save [:name] "Nexus"]]})
-               :results)
-           [{:effect [:effects/save [:number] 3]
-             :res {:existing "Data"
-                   :number 3}}
-            {:effect [:effects/save [:name] "Nexus"]
-             :res {:existing "Data"
-                   :number 3
-                   :name "Nexus"}}]))))
-
 (deftest dispatch-test
-  (testing "Expands, interpolates and executes action"
-    (is (= (let [system (atom {:step-size 3})]
-             (-> {:nexus/system->state deref
-                  :nexus/placeholders {:dispatch/number (fn [{:keys [value]}] value)}}
-                 (merge nexus-with-inc)
-                 (merge nexus-with-save)
-                 (nexus/dispatch system {:value 5} [[:actions/inc [:dispatch/number]]]))
+  (testing "Fails on unknown action/effect"
+    (is (= (->> [[:effects/no-such-thing]]
+                (nexus/dispatch test-nexus (atom {}) {:value 5})
+                h/datafy-errors)
+           {:errors
+            [{:phase :execute-effect
+              :effect-k :effects/no-such-thing
+              :err {:message "No such effect"
+                    :data {:available-effects [:effects/save]}}}]})))
+
+  (testing "Executes effect"
+    (is (= (let [system (atom {})]
+             (->> [[:effects/save [:number] 1]]
+                  (nexus/dispatch test-nexus system {:value 5}))
              @system)
-           {:step-size 3
-            :number 6})))
+           {:number 1})))
+
+  (testing "Expands and executes action"
+    (is (= (let [system (atom {:value 0})]
+             (->> [[:actions/plus [:value] 2]]
+                  (nexus/dispatch test-nexus system {:value 5}))
+             @system)
+           {:value 2})))
+
+  (testing "Double expands and executes action"
+    (is (= (let [system (atom {:value 0})]
+             (->> [[:actions/inc [:value]]]
+                  (nexus/dispatch test-nexus system {:value 5}))
+             @system)
+           {:value 1})))
+
+  (testing "Expands, interpolates and executes action"
+    (is (= (let [system (atom {:number 2})]
+             (->> [[:actions/plus [:number] [:dispatch/number]]]
+                  (nexus/dispatch test-nexus system {:value 5}))
+             @system)
+           {:number 7})))
+
+  (testing "Passes state to action handler"
+    (is (= (-> test-nexus
+               (assoc :nexus/actions
+                      {:actions/test
+                       (fn [state arg]
+                         [[:effects/save (:path (:config state)) arg]])})
+               (nexus/dispatch (atom {:config {:path [:number]}}) {} [[:actions/test "it"]])
+               :results
+               first
+               :res)
+           {:config {:path [:number]}
+            :number "it"})))
+
+  (testing "Returns error when action handler does not return collection of actions"
+    (is (= (-> test-nexus
+               (assoc-in
+                [:nexus/actions :actions/test]
+                (fn [{:keys [config]} arg]
+                  [:actions/store (:n config) arg]))
+               (nexus/dispatch (atom {:config {:n 2}}) {} [[:actions/test "it"]])
+               h/datafy-errors)
+           {:errors
+            [{:action [:actions/test "it"]
+              :trace [[:actions/test "it"]]
+              :phase :expand-action
+              :err {:message ":actions/test should expand to a collection of actions"
+                    :data {:res [:actions/store 2 "it"]
+                           :action [:actions/test "it"]}}}]})))
+
+  (testing "Expands action to empty list of effects"
+    (is (empty? (-> test-nexus
+                    (assoc-in [:nexus/actions :actions/test]
+                              (fn [_ _] []))
+                    (nexus/dispatch (atom {:config {:n 2}}) {} [[:actions/test "it"]])))))
+
+  (testing "Interpolates placeholders in expanded actions"
+    (is (= (-> test-nexus
+               (assoc-in [:nexus/actions :actions/inc]
+                         (fn [_ path]
+                           [[:actions/plus path [:placeholders/one]]]))
+               (assoc-in [:nexus/placeholders :placeholders/one] :one)
+               (nexus/dispatch (atom {:number 0}) {:one 11} [[:actions/inc [:number]]])
+               :results)
+           [{:effect [:effects/save [:number] 11]
+             :res {:number 11}}])))
+
+  (testing "Returns errors from bad action handler"
+    (is (= (-> test-nexus
+               (assoc-in [:nexus/actions :actions/inc]
+                         (fn [_ _]
+                           (throw (ex-info "Boom!" {}))))
+               (nexus/dispatch (atom {}) {} [[:actions/inc 2]])
+               h/datafy-errors)
+           {:errors [{:phase :expand-action
+                      :action [:actions/inc 2]
+                      :trace [[:actions/inc 2]]
+                      :err {:message "Boom!"
+                            :data {}}}]})))
+
+  (testing "Calls before-action interceptor before action handler"
+    (is (= (-> (h/with-interceptor test-nexus :before-action
+                 #(assoc-in % [:state :number] 5))
+               (nexus/dispatch (atom {}) {} [[:actions/inc [:number]]]))
+           {:results [{:effect [:effects/save [:number] 6]
+                       :res {:number 6}}]})))
+
+  (testing "Calls after-action interceptor after action handler"
+    (is (= (let [log (atom [])]
+             (-> (h/with-interceptor test-nexus :after-action
+                   (fn [context]
+                     (swap! log conj {:in (:action context) :out (:actions context)})
+                     context))
+                 (nexus/dispatch (atom {:number 0}) {} [[:actions/plus [:number] 2]]))
+             @log)
+           [{:in [:actions/plus [:number] 2]
+             :out [[:effects/save [:number] 2]]}])))
+
+  (testing "Does not call interceptors for actions that have no handlers"
+    (is (= (let [log (atom [])]
+             (-> (h/with-interceptor test-nexus :before-action
+                   (fn [ctx]
+                     (swap! log conj ctx)))
+                 (nexus/dispatch (atom {:state "Here"}) {} [[:actions/unknown 2]]))
+             @log)
+           [])))
+
+  (testing "Returns error from before-action interceptor"
+    (let [system (atom {:state "Here"})]
+      (is (= (-> (h/with-interceptor test-nexus :before-action
+                   (fn [ctx]
+                     (throw (ex-info "Boom!" {:ctx ctx}))))
+                 (nexus/dispatch system {} [[:actions/plus [:number] 2]])
+                 h/datafy-errors)
+             {:errors
+              [{:phase :before-action
+                :trace [[:actions/plus [:number] 2]]
+                :action [:actions/plus [:number] 2]
+                :err
+                {:message "Boom!"
+                 :data
+                 {:ctx
+                  {:system system
+                   :actions [[:actions/plus [:number] 2]]
+                   :action [:actions/plus [:number] 2]
+                   :state {:state "Here"}
+                   :dispatch-data {}
+                   :queue [{:phase :expand-action
+                            :before-action ::h/fn}]
+                   :stack [{:before-action ::h/fn}]
+                   :trace [[:actions/plus [:number] 2]]}}}}]}))))
+
+  (testing "Returns error from after-action interceptor"
+    (let [system (atom {:number 0})]
+      (is (= (-> (h/with-interceptor test-nexus :after-action
+                   (fn [ctx]
+                     (throw (ex-info "Boom!" {:ctx ctx})))
+                   :logger)
+                 (nexus/dispatch system {} [[:actions/plus [:number] 2]])
+                 h/datafy-errors)
+             {:errors
+              [{:phase :after-action
+                :id :logger
+                :trace nil
+                :action [:actions/plus [:number] 2]
+                :err
+                {:message "Boom!"
+                 :data
+                 {:ctx
+                  {:system system
+                   :actions [[:effects/save [:number] 2]]
+                   :action [:actions/plus [:number] 2]
+                   :state {:number 2}
+                   :dispatch-data {}
+                   :dispatch ::h/fn
+                   :queue nil
+                   :trace nil
+                   :stack nil
+                   :results [{:effect [:effects/save [:number] 2]
+                              :res {:number 2}}]}}}}]}))))
+
+  (testing "Allows interceptor to abort action expansion flow"
+    (is (= (-> (h/with-interceptor test-nexus :before-action
+                 #(throw (ex-info "Boom!" {:ctx %}))
+                 :logger)
+               (h/with-interceptor :before-action
+                   #(cond-> %
+                      (:errors %) (dissoc :queue :stack))
+                 :abort-early)
+               (nexus/dispatch (atom {:state "Here"}) {} [[:actions/inc 2]])
+               h/datafy-errors
+               (update-in [:errors 0 :err] select-keys [:message]))
+           ;; No results, because no effects!
+           {:errors
+            [{:id :logger
+              :phase :before-action
+              :action [:actions/inc 2]
+              :trace [[:actions/inc 2]]
+              :err {:message "Boom!"}}]})))
+
+  (testing "Preserves order of residual actions during recursive expansion"
+    ;; A repro / regression test for the bug addressed by
+    ;; https://github.com/cjohansen/nexus/pull/11
+    ;; When recursively expanding actions, action order was being reversed
+    (is (= (-> {:nexus/system->state deref
+
+                :nexus/actions
+                {:actions/outer (fn [_] [[:actions/inner] [:effects/tail]])
+                 :actions/inner (fn [_] [[:effects/a] [:effects/b] [:effects/c]])}
+
+                :nexus/effects
+                {:effects/a (fn [_ _])
+                 :effects/b (fn [_ _])
+                 :effects/c (fn [_ _])
+                 :effects/tail (fn [_ _])}}
+               (nexus/dispatch (atom {}) {} [[:actions/outer]])
+               :results
+               (->> (map :effect)))
+           [[:effects/a] [:effects/b] [:effects/c] [:effects/tail]])))
 
   (testing "Returns results"
-    (is (= (let [system (atom {:step-size 3})]
-             (-> {:nexus/system->state deref
-                  :nexus/placeholders {:dispatch/number (fn [{:keys [value]}] value)}}
-                 (merge nexus-with-inc)
-                 (merge nexus-with-save)
-                 (nexus/dispatch system {:value 5} [[:actions/inc [:dispatch/number]]])
-                 :results))
-           [{:effect [:effects/save [:number] 6]
-             :res {:step-size 3
-                   :number 6}}])))
+    (is (= (let [system (atom {:number 1})]
+             (->> [[:actions/inc [:number]]]
+                  (nexus/dispatch test-nexus system {:value 5})
+                  :results))
+           [{:effect [:effects/save [:number] 2]
+             :res {:number 2}}])))
 
   (testing "Returns errors from effect"
     (is (= (-> {:nexus/system->state deref
@@ -473,10 +375,6 @@
   (testing "Errors from nested dispatch can be intercepted"
     (is (= (let [intercepted-errors (atom nil)]
              (-> {:nexus/system->state deref
-                  :nexus/interceptors [{:after-effect
-                                        (fn [ctx]
-                                          (swap! intercepted-errors into (:errors ctx))
-                                          ctx)}]
                   :nexus/effects
                   {:effects/fail
                    (fn [_ _]
@@ -484,6 +382,10 @@
                    :effects/dispatch-fail
                    (fn [{:keys [dispatch]} _]
                      (dispatch [[:effects/fail]]))}}
+                 (h/with-interceptor :after-effect
+                     (fn [ctx]
+                       (swap! intercepted-errors into (:errors ctx))
+                       ctx))
                  (nexus/dispatch (atom nil) {} [[:effects/dispatch-fail]]))
              (h/datafy-errors* @intercepted-errors))
            [{:phase :execute-effect
@@ -496,10 +398,6 @@
   (testing "Tracks sources across multiple levels of dispatch"
     (is (= (let [intercepted-errors (atom nil)]
              (-> {:nexus/system->state deref
-                  :nexus/interceptors [{:after-effect
-                                        (fn [ctx]
-                                          (swap! intercepted-errors into (:errors ctx))
-                                          ctx)}]
                   :nexus/effects
                   {:effects/fail
                    (fn [_ _]
@@ -512,6 +410,10 @@
                    :effects/prepare-to-fail
                    (fn [{:keys [dispatch]} _]
                      (dispatch [[:effects/dispatch-fail]]))}}
+                 (h/with-interceptor :after-effect
+                     (fn [ctx]
+                       (swap! intercepted-errors into (:errors ctx))
+                       ctx))
                  (nexus/dispatch (atom nil) {} [[:effects/prepare-to-fail]]))
              (h/datafy-errors* @intercepted-errors))
            [{:phase :execute-effect
@@ -523,59 +425,78 @@
                      [:effects/fail]]}])))
 
   (testing "Runs interceptors in order"
-    (is (= (let [system (atom {:step-size 3})
+    (is (= (let [system (atom {:number 3})
                  log (atom [])]
-             (-> {:nexus/system->state deref
-                  :nexus/placeholders {:dispatch/number (fn [{:keys [value]}] value)}
-                  :nexus/interceptors [(h/log-interceptor log 1)
-                                       (h/log-interceptor log 2)
-                                       (h/log-interceptor log 3)]}
-                 (merge nexus-with-inc)
-                 (merge nexus-with-save)
-                 (nexus/dispatch system {:value 5} [[:actions/inc [:dispatch/number]]]))
+             (-> test-nexus
+                 (assoc :nexus/interceptors [(h/log-interceptor log 1)
+                                             (h/log-interceptor log 2)
+                                             (h/log-interceptor log 3)])
+                 (nexus/dispatch system {:value 5} [[:actions/plus [:number] [:dispatch/number]]]))
              @log)
-           [[:before-dispatch 1 [[:actions/inc [:dispatch/number]]]]
-            [:before-dispatch 2 [[:actions/inc [:dispatch/number]]]]
-            [:before-dispatch 3 [[:actions/inc [:dispatch/number]]]]
-            [:before-action 1 :actions/inc]
-            [:before-action 2 :actions/inc]
-            [:before-action 3 :actions/inc]
-            [:after-action 3 :actions/inc [:effects/save]]
-            [:after-action 2 :actions/inc [:effects/save]]
-            [:after-action 1 :actions/inc [:effects/save]]
+           [[:before-dispatch 1 [[:actions/plus [:number] [:dispatch/number]]]]
+            [:before-dispatch 2 [[:actions/plus [:number] [:dispatch/number]]]]
+            [:before-dispatch 3 [[:actions/plus [:number] [:dispatch/number]]]]
+            [:before-action 1 :actions/plus]
+            [:before-action 2 :actions/plus]
+            [:before-action 3 :actions/plus]
             [:before-effect 1 :effects/save]
             [:before-effect 2 :effects/save]
             [:before-effect 3 :effects/save]
-            [:after-effect 3 :effects/save {:step-size 3, :number 6}]
-            [:after-effect 2 :effects/save {:step-size 3, :number 6}]
-            [:after-effect 1 :effects/save {:step-size 3, :number 6}]
-            [:after-dispatch 3 [{:effect [:effects/save [:number] 6]
-                                 :res {:step-size 3, :number 6}}]]
-            [:after-dispatch 2 [{:effect [:effects/save [:number] 6]
-                                 :res {:step-size 3, :number 6}}]]
-            [:after-dispatch 1 [{:effect [:effects/save [:number] 6]
-                                 :res {:step-size 3, :number 6}}]]])))
+            [:after-effect 3 :effects/save {:number 8}]
+            [:after-effect 2 :effects/save {:number 8}]
+            [:after-effect 1 :effects/save {:number 8}]
+            [:after-action 3 :actions/plus [:effects/save]]
+            [:after-action 2 :actions/plus [:effects/save]]
+            [:after-action 1 :actions/plus [:effects/save]]
+            [:after-dispatch 3 [{:effect [:effects/save [:number] 8]
+                                 :res {:number 8}}]]
+            [:after-dispatch 2 [{:effect [:effects/save [:number] 8]
+                                 :res {:number 8}}]]
+            [:after-dispatch 1 [{:effect [:effects/save [:number] 8]
+                                 :res {:number 8}}]]])))
+
+  (testing "Runs interceptors for all effects"
+    (is (= (let [log (atom [])]
+             (-> (assoc-in test-nexus [:nexus/actions :actions/duplex]
+                           (fn [_]
+                             [[:effects/save [:a] 1]
+                              [:effects/save [:b] 2]]))
+                 (assoc :nexus/interceptors [(h/log-interceptor log 1)])
+                 (nexus/dispatch (atom {}) {:value 5} [[:actions/duplex]]))
+             @log)
+           [[:before-dispatch 1 [[:actions/duplex]]]
+            [:before-action 1 :actions/duplex]
+            [:before-effect 1 :effects/save]
+            [:after-effect 1 :effects/save {:a 1}]
+            [:before-effect 1 :effects/save]
+            [:after-effect 1 :effects/save {:a 1 :b 2}]
+            [:after-action 1 :actions/duplex [:effects/save :effects/save]]
+            [:after-dispatch 1
+             [{:effect [:effects/save [:a] 1]
+               :res {:a 1}}
+              {:effect [:effects/save [:b] 2]
+               :res {:a 1, :b 2}}]]])))
 
   (testing "Dispatches actions recursively with new dispatch data"
     (is (= (let [system (atom {:step-size 3})
                  log (atom [])]
-             (-> {:nexus/system->state deref
+             (-> test-nexus
+                 (assoc
                   :nexus/placeholders {:dd/k (fn [dispatch-data k]
-                                               (prn dispatch-data k)
                                                (if (contains? dispatch-data k)
                                                  (k dispatch-data)
                                                  [:dd/k k]))}
                   :nexus/interceptors [(h/log-interceptor log 1)]
-                  :nexus/effects {:effects/save
-                                  (fn [{:keys [dispatch]} system path v & [{:keys [on-success]}]]
-                                    (let [res (swap! system assoc-in path v)]
-                                      (when on-success
-                                        (dispatch on-success res))
-                                      res))}}
-                 (merge nexus-with-inc)
+                  :nexus/effects
+                  {:effects/save
+                   (fn [{:keys [dispatch]} system path v & [{:keys [on-success]}]]
+                     (let [res (swap! system assoc-in path v)]
+                       (when on-success
+                         (dispatch on-success res))
+                       res))})
                  (nexus/dispatch system {:value 5}
-                                 [[:effects/save [:number] [:dd/k :value]
-                                   {:on-success [[:effects/save [:second-number] [:dd/k :number]]]}]]))
+                     [[:effects/save [:number] [:dd/k :value]
+                       {:on-success [[:effects/save [:second-number] [:dd/k :number]]]}]]))
              [@system @log])
            [{:step-size 3
              :number 5
@@ -592,87 +513,6 @@
                                            {:on-success [[:effects/save [:second-number] [:dd/k :number]]]}],
                                   :res {:number 5, :step-size 3}}]]]])))
 
-  (testing "Optionally batch processes effect"
-    (is (= (-> nexus-with-batched-save
-               (nexus/dispatch (atom {:existing "Data"}) {}
-                   [[:effects/save [:number] 3]
-                    [:effects/save [:name] "Nexus"]]))
-           {:results
-            [{:effects [[:effects/save [:number] 3]
-                        [:effects/save [:name] "Nexus"]]
-              :res {:existing "Data"
-                    :number 3
-                    :name "Nexus"}}]})))
-
-  (testing "Executes effects as close to dispatch order as possible, starting with unbatched ones"
-    (is (= (let [log (atom [])]
-             (-> {:nexus/effects
-                  {:effects/save ^:nexus/batch
-                   (fn [_ _ effect-args]
-                     (doseq [args effect-args]
-                       (swap! log conj (into [:effects/save] args))))
-
-                   :effects/transact ^:nexus/batch
-                   (fn [_ _ effect-args]
-                     (doseq [args effect-args]
-                       (swap! log conj (into [:effects/transact] args))))
-
-                   :effects/alert
-                   (fn [_ _ text]
-                     (swap! log conj [:effects/alert text]))}}
-                 (nexus/dispatch (atom {}) {}
-                     [[:effects/save :a 1]
-                      [:effects/transact :A 1]
-                      [:effects/alert "First"]
-                      [:effects/save :b 2]
-                      [:effects/alert "Second"]
-                      [:effects/transact :B 2]]))
-             @log)
-           [[:effects/alert "First"]
-            [:effects/alert "Second"]
-            [:effects/save :a 1]
-            [:effects/save :b 2]
-            [:effects/transact :A 1]
-            [:effects/transact :B 2]])))
-
-  (testing "Interpolates actions in between expansions"
-    (is (= (->> (let [log (atom [])]
-                  (-> {:nexus/system->state deref
-
-                       :nexus/placeholders
-                       {:rnd/gen-id (fn [_] (random-uuid))}
-
-                       :nexus/actions
-                       {:actions/create-new-thing
-                        (fn [_ title]
-                          [[:actions/create-thing [:rnd/gen-id] title]])
-
-                        :actions/create-thing
-                        (fn [_ id title]
-                          [[:actions/save-thing id title]
-                           [:actions/record-meta id "Created"]])
-
-                        :actions/save-thing
-                        (fn [_ id title]
-                          [[:effects/save id title]])
-
-                        :actions/record-meta
-                        (fn [_ id data]
-                          [[:effects/save id data]])}
-
-                       :nexus/effects
-                       {:effects/save ^:nexus/batch
-                        (fn [_ _ effect-args]
-                          (doseq [args effect-args]
-                            (swap! log conj (into [:effects/save] args))))}}
-                      (nexus/dispatch (atom {}) {}
-                          [[:actions/create-new-thing "A thing!"]]))
-                  @log)
-                (map second)
-                set
-                count)
-           1)))
-
   (testing "Updates state snapshot after every effect"
     (is (= (-> {:nexus/system->state deref
 
@@ -688,8 +528,8 @@
                    (swap! system assoc-in path v))}}
 
                (nexus/dispatch (atom {:id 0}) {}
-                 [[:actions/create-thing "A thing!"]
-                  [:actions/create-thing "Another thing!"]])
+                   [[:actions/create-thing "A thing!"]
+                    [:actions/create-thing "Another thing!"]])
                :results
                last
                :res)
@@ -723,16 +563,8 @@
            {:results [{:effect [:effects/doit], :res {}}]})))
 
   (testing "Can hijack the dispatch function with an interceptor"
-    (is (= (let [system! (atom {})]
+    (is (= (let [system (atom {})]
              (-> {:nexus/system->state deref
-                  :nexus/interceptors
-                  [{:before-effect
-                    (fn [ctx]
-                      (update ctx :dispatch
-                              (fn [dispatch]
-                                (fn [actions]
-                                  (dispatch (conj actions [:effects/save [:log] "Sneaky!"]))))))}]
-
                   :nexus/effects
                   {:effects/create
                    (fn [{:keys [dispatch]} system path v]
@@ -742,8 +574,13 @@
                    :effects/save
                    (fn [_ system path v]
                      (swap! system assoc-in path v))}}
-                 (nexus/dispatch system! {} [[:effects/create [:person] {:name "Chris"}]]))
-             @system!)
+                 (h/with-interceptor :before-effect
+                     (fn [ctx]
+                       (update ctx :dispatch (fn [dispatch]
+                                               (fn [actions & _]
+                                                 (dispatch (conj actions [:effects/save [:log] "Sneaky!"])))))))
+                 (nexus/dispatch system {} [[:effects/create [:person] {:name "Chris"}]]))
+             @system)
            {:person {:name "Chris"
                      :created? true}
             :log "Sneaky!"})))
@@ -768,31 +605,31 @@
                   :nexus/effects
                   {:effects/save
                    (fn [_ system k v]
-                     (swap! system assoc-in k v))}
-
-                  :nexus/interceptors [{:before-effect (fn [ctx]
-                                                         (swap! log conj (second (:effect ctx)))
-                                                         ctx)}]}
+                     (swap! system assoc-in k v))}}
+                 (h/with-interceptor :before-effect
+                     (fn [ctx]
+                       (swap! log conj (second (:effect ctx)))
+                       ctx))
                  (nexus/dispatch (atom {}) {}
-                     [[:actions/inc :a]
-                      [:actions/add-ks [:b :c :d]]
-                      [:actions/add-ks [:e :f :g]]
-                      [:actions/inc :h]]))
+                                 [[:actions/inc :a]
+                                  [:actions/add-ks [:b :c :d]]
+                                  [:actions/add-ks [:e :f :g]]
+                                  [:actions/inc :h]]))
              @log)
            [:a :b :c :d :e :f :g :h])))
 
   (testing "Can make persistent modifications to the ctx with interceptors"
     (is (= (let [system (atom {:step-size 3})
                  log (atom [])]
-             (-> {:nexus/system->state deref
+             (-> test-nexus
+                 (assoc
+                  :nexus/system->state deref
                   :nexus/interceptors [{:before-dispatch #(assoc % :dispatch-id "dispatch-1")
                                         :before-action #(assoc % :action-id "action-1")
                                         :before-effect #(assoc % :effect-id "effect-1")
                                         :after-dispatch #(do (swap! log conj (select-keys % [:dispatch-id :action-id :effect-id]))
-                                                             %)}]}
-                 (merge nexus-with-inc)
-                 (merge nexus-with-save)
-                 (nexus/dispatch system {:value 5} [[:actions/inc 3]]))
+                                                             %)}])
+                 (nexus/dispatch system {:value 5} [[:actions/inc [:number]]]))
              @log)
            [{:dispatch-id "dispatch-1"
              :action-id "action-1"
@@ -808,11 +645,11 @@
                     (assoc @system :now (:now dispatch-data)))
 
                   :nexus/actions
-                  {:actions/noop (constantly nil)}
-
-                  :nexus/interceptors [{:before-action (fn [ctx]
-                                                         (reset! state (:state ctx))
-                                                         ctx)}]}
+                  {:actions/noop (constantly nil)}}
+                 (h/with-interceptor :before-action
+                     (fn [ctx]
+                       (reset! state (:state ctx))
+                       ctx))
                  (nexus/dispatch (atom {:num 1}) {:now 1000} [[:actions/noop]]))
              @state)
            {:num 1
