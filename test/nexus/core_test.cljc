@@ -562,6 +562,28 @@
                (nexus/dispatch (atom {:state "State"}) {} [[:actions/prepare-it]]))
            {:results [{:effect [:effects/doit], :res {}}]})))
 
+  (testing "Interceptors can track state in nested dispatch"
+    (is (= (let [log (atom [])]
+             (-> {:nexus/system->state deref
+                  :nexus/interceptors [{:before-dispatch
+                                        (fn [ctx]
+                                          (let [id (count @log)]
+                                            (swap! log conj (cond-> {:id id}
+                                                              (:id ctx) (assoc :parent (:id ctx))))
+                                            (-> (assoc ctx :id id)
+                                                (update :dispatch-trace conj id))))}]
+                  :nexus/actions {:actions/prepare-it (fn [_] [[:effects/doit]])
+                                  :actions/noop (fn [_] [])}
+                  :nexus/effects
+                  {:effects/doit
+                   (fn [{:keys [dispatch]} _]
+                     (dispatch [[:actions/noop]]))}}
+                 (nexus/dispatch (atom {}) {} [[:actions/prepare-it]]))
+             @log)
+           [{:id 0}
+            {:id 1
+             :parent 0}])))
+
   (testing "Can hijack the dispatch function with an interceptor"
     (is (= (let [system (atom {})]
              (-> {:nexus/system->state deref
