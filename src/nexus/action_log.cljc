@@ -3,8 +3,10 @@
             [nexus.inspector :as inspector]
             [nexus.registry :as nxr]))
 
-(defn create-log []
-  (atom []))
+(defn create-log [& [opts]]
+  (atom
+   (-> (into {} opts)
+       (update :slow-threshold #(or % 100)))))
 
 (defn install-logger [nexus log]
   (-> nexus
@@ -18,7 +20,8 @@
      (when (contains? (last the-log) :results)
        (dataspex/inspect (or label "Actions")
          (inspector/->LogInspector the-log)
-         (cond-> {:track-changes? false}
+         (cond-> {:track-changes? false
+                  :auditable? false}
            ns-aliases (assoc :ns-aliases ns-aliases)))))))
 
 (defn ^:export inspect

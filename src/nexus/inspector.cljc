@@ -1,82 +1,208 @@
 (ns nexus.inspector
-  (:require [dataspex.data :as data]
+  (:require [clojure.core.protocols :as p]
+            [dataspex.data :as data]
             [dataspex.hiccup :as hiccup]
+            [dataspex.icons :as-alias icons]
             [dataspex.protocols :as dp]
             [dataspex.time :as time]
             [dataspex.ui :as-alias ui]
             [dataspex.views :as views]))
 
+(defn no-hiccup [opt]
+  (assoc opt :dataspex/hiccup? false))
+
 (defn render-action [action opt]
-  (hiccup/render-source
-   action
-   (assoc opt
-          :dataspex/hiccup? false
-          ::ui/line-length 100)))
+  (if (hiccup/summarize? action {:dataspex/summarize-above-w 200})
+    [::ui/source
+     (into [::ui/vector
+            (hiccup/render-inline (first action) opt)]
+           (for [arg (rest action)]
+             (hiccup/render-inline arg (no-hiccup opt))))]
+    (hiccup/render-source
+     action
+     (assoc opt
+            :dataspex/hiccup? false
+            ::ui/line-length 100))))
 
 (defn render-actions [actions opt]
-  (into [:div] (map #(render-action % opt) actions)))
+  (into [:div] (mapv #(render-action % opt) actions)))
 
-(defrecord Action [data f]
+(defrecord Action [action]
   dp/IRenderInline
   (render-inline [_ opt]
-    (f data opt))
+    (render-action action opt))
 
   dp/IRenderDictionary
   (render-dictionary [_ opt]
-    (f data opt))
+    (render-action action opt))
 
   dp/IRenderSource
   (render-source [_ opt]
-    (hiccup/render-source data (assoc opt :dataspex/hiccup? false)))
+    (hiccup/render-source action (no-hiccup opt)))
 
   dp/ICopy
   (copy-as-string [_]
-    (data/stringify data))
+    (data/stringify action))
 
   dp/IPrefersView
   (dp/get-preferred-view [_]
     views/source))
 
-(defn ->action [action]
-  (when action
-    (->Action action render-action)))
+(defrecord Actions [actions]
+  dp/IRenderInline
+  (render-inline [_ opt]
+    (render-actions actions opt)))
 
-(defn ->actions [actions]
-  (when (seq actions)
-    (->Action (vec actions) render-actions)))
+(defn render-action-list [actions opt]
+  (into [::ui/ul]
+        (map-indexed
+         (fn [idx action]
+           [::ui/link
+            {::ui/actions (->> (views/path-to opt [idx])
+                               (views/navigate-to opt))}
+            (render-action action opt)])
+         actions)))
 
-(defn get-detail-entries [{:keys [dispatched-at actions dispatch-data
-                                  effects results expansions dom-event
-                                  dispatch-elapsed state error errors]}]
+(defrecord ActionIndex [actions]
+  dp/IRenderInline
+  (render-inline [_ opt]
+    (render-action-list (map :action actions) (update opt :dataspex/path conj :actions))))
+
+(defrecord Timing [ms slow?]
+  dp/IRenderInline
+  (render-inline [_ _]
+    (cond->> (str ms "ms")
+      slow? (conj [::ui/info {:style {:color "var(--error-fg)"}}
+                   [::icons/clock]]))))
+
+(defn round-tenth [ms]
+  (/ (Math/round (double (* ms 10))) 10.0))
+
+(defn ->timing [ms & [{:keys [slow?]}]]
+  (->Timing (round-tenth ms) (boolean slow?)))
+
+(defn measure-elapsed [{:keys [slow-threshold]} now-ms then-ms]
+  (let [ms (- now-ms then-ms)]
+    (->timing ms {:slow? (<= slow-threshold ms)})))
+
+(defn just-effects? [actions]
+  (every? (fn [{:keys [action effects]}]
+            (= [action] effects)) actions))
+
+(declare get-action-entries)
+(declare ->ActionDetail)
+
+(defrecord ActionDetail [dispatched-action]
+  dp/IRenderInline
+  (render-inline [_ opt]
+    (render-action (:action dispatched-action) opt))
+
+  dp/IRenderDictionary
+  (render-dictionary [_ opt]
+    (->> (get-action-entries dispatched-action)
+         (hiccup/render-entries-dictionary dispatched-action (no-hiccup opt))))
+
+  dp/IKeyLookup
+  (lookup [_ _]
+    dispatched-action)
+
+  dp/INavigatable
+  (nav-in [_ [k & ks]]
+    (cond-> (if (keyword? k)
+              (get dispatched-action k)
+              (->ActionDetail (:dispatched-action k)))
+      ks (data/nav-in ks))))
+
+(defrecord ActionKey [dispatched-action]
+  dp/IRenderInline
+  (render-inline [_ opt]
+    (hiccup/render-inline (first (:action dispatched-action)) (no-hiccup opt)))
+
+  dp/IKeyLookup
+  (lookup [_ _]
+    (->ActionDetail dispatched-action)))
+
+(defn get-action-entries [{:keys [action interpolated interpolations interpolation-elapsed
+                                  expansions expansion-elapsed effects state]}]
+  (concat
+   [{:label (hiccup/string-label "Action")
+     :k :action
+     :v (->Action action)}]
+   (when interpolations
+     [{:label (hiccup/string-label "Interpolations")
+       :k :interpolations
+       :v interpolations}
+      {:label (hiccup/string-label "Interpolated")
+       :k :interpolated
+       :v (->Action interpolated)}
+      {:label (hiccup/string-label "Interpolation elapsed")
+       :k :interpolation-elapsed
+       :v interpolation-elapsed}])
+   [{:label (hiccup/string-label "State")
+     :k :state
+     :v state}]
+   (when (seq expansions)
+     (conj (->> expansions
+                (mapv
+                 (fn [action]
+                   (when (:action action)
+                     {:k (->ActionKey action)
+                      :v (->ActionDetail action)})))
+                (filterv second)
+                (mapv (fn [idx entry]
+                        (cond-> entry
+                          (= 0 idx) (assoc :label (hiccup/string-label "Expanded actions"))))
+                      (range)))
+           {:label (hiccup/string-label "Expansion elapsed")
+            :k :expansion-elapsed
+            :v expansion-elapsed}))
+   (when effects
+     [{:label (hiccup/string-label "Effects")
+       :k :effects
+       :v (->Actions effects)}])))
+
+(declare ->Dispatch)
+
+(deftype DispatchId [id dispatched-at]
+  dp/IRenderInline
+  (render-inline [_ _]
+    [::ui/code (time/hh:mm:ss dispatched-at)])
+
+  dp/IKeyLookup
+  (lookup [_ log]
+    (->Dispatch
+     (first (filter (comp #{id} :id) log)))))
+
+(defn get-dispatch-entries [{:keys [dispatched-at dispatched-by dispatch-data dom-event
+                                  actions effects error errors dispatch-elapsed]}]
   (concat
    [{:label (hiccup/string-label "Dispatched at")
      :k :dispatched-at
      :v dispatched-at}]
+   (when dispatched-by
+     [{:label (hiccup/string-label "Dispatched by")
+       :absolute-path [(->DispatchId (:id dispatched-by) (:dispatched-at dispatched-by))]
+       :v (->Actions (:actions dispatched-by))}])
    (when dom-event
      [{:label (hiccup/string-label "DOM Event")
        :k :dom-event
        :v dom-event}])
-   (if (or (nil? effects) (= (:data effects) (:data actions)))
-     [{:label (hiccup/string-label "Actions")
-       :k :dispatched
-       :v actions}]
-     (->> [{:label (hiccup/string-label "Actions")
-            :k :dispatched
-            :v actions}
-           (when (seq effects)
-             {:label (hiccup/string-label "Effects")
-              :k :effects
-              :v effects})
-           {:label (hiccup/string-label "Expansions")
-            :k :expansions
-            :v expansions}]
-          (remove nil?)))
-   [{:label (hiccup/string-label "State")
-     :k :state
-     :v state}
-    {:label (hiccup/string-label "Dispatch data")
+   [{:label (hiccup/string-label "Dispatch data")
      :k :dispatch-data
      :v dispatch-data}]
+   (when-not (just-effects? actions)
+     (map-indexed
+      (fn [idx dispatched-action]
+        (cond-> {:k (->ActionKey dispatched-action)
+                 :v (->ActionDetail dispatched-action)}
+          (= 0 idx) (assoc :label (hiccup/string-label "Actions"))))
+      actions))
+   (map-indexed
+    (fn [idx {:keys [effects]}]
+      (cond-> {:v (->Actions effects)
+               :path [:effects idx]}
+        (= 0 idx) (assoc :label (hiccup/string-label "Effects"))))
+    effects)
    (when error
      [{:label (hiccup/string-label "Error")
        :k :error
@@ -85,60 +211,86 @@
      [{:label (hiccup/string-label "Errors")
        :k :errors
        :v errors}])
-   [{:label (hiccup/string-label "Results")
-     :k :results
-     :v (keep :res results)}
-    {:label (hiccup/string-label "Dispatch time")
+   (let [dispatches (mapcat :dispatches effects)]
+     (->> dispatches
+          (map-indexed
+           (fn [idx {:keys [id dispatched-at actions]}]
+             (cond-> {:absolute-path [(->DispatchId id dispatched-at)]
+                      :v (->Actions actions)}
+               (= 0 idx) (assoc :label (hiccup/string-label
+                                        (if (= 1 (count dispatches))
+                                          "Nested dispatch"
+                                          "Nested dispatches"))))))))
+   [{:label (hiccup/string-label "Dispatch elapsed")
      :k :dispatch-elapsed
-     :v (hiccup/string-label (str dispatch-elapsed "ms"))}]))
+     :v dispatch-elapsed}]))
 
-(deftype ActionDetails [details]
+(deftype Dispatch [dispatch]
   dp/IRenderDictionary
   (render-dictionary [_ opt]
-    (hiccup/render-entries-dictionary details opt (get-detail-entries details)))
+    (hiccup/render-entries-dictionary dispatch opt (get-dispatch-entries dispatch)))
 
   dp/IRenderSource
   (render-source [_ opt]
-    (hiccup/render-source details opt))
+    (hiccup/render-source dispatch opt))
 
   dp/ICopy
   (copy-as-string [_]
-    (data/stringify (:dispatched details))))
+    (data/stringify (mapv :action (:actions dispatch))))
 
-(defrecord ActionKey [idx dispatched-at]
+  p/Datafiable
+  (datafy [_]
+    dispatch))
+
+(defn render-inline-dispatch [{:keys [dispatched-at dispatch-elapsed errors]}]
+  [::ui/info
+   [::ui/code (time/hh:mm:ss dispatched-at)]
+   (when (:slow? dispatch-elapsed)
+     [::icons/clock {:style {:color "var(--error-fg)"}}])
+   (when (seq errors)
+     [::icons/warning {:style {:color "var(--error-fg)"}}])])
+
+(defrecord DispatchLabel [dispatch]
   dp/IRenderInline
   (render-inline [_ _]
-    [::ui/code (time/hh:mm:ss dispatched-at)]))
+    (render-inline-dispatch dispatch)))
 
-(defn get-action-log [log]
-  (->> log
-       (map-indexed
-        (fn [idx {:keys [dispatched-at actions]}]
-          (let [k (->ActionKey idx dispatched-at)]
-            {:label k
+(defrecord DispatchKey [id dispatched-at]
+  dp/IRenderInline
+  (render-inline [_ _]
+    [::ui/code (time/hh:mm:ss dispatched-at)])
+
+  dp/IKeyLookup
+  (lookup [_ log]
+    (->Dispatch (get (:entries log) id))))
+
+(defn ->dispatch-key [dispatch]
+  (->DispatchKey (:id dispatch) (:dispatched-at dispatch)))
+
+(defn get-action-log [{:keys [entries chronology]}]
+  (->> chronology
+       (map
+        (fn [id]
+          (let [dispatch (get entries id)
+                k (->dispatch-key dispatch)]
+            {:label (->DispatchLabel dispatch)
              :k k
-             :v actions})))
-       reverse))
-
-(defn nav-in-log [log [k & ks]]
-  (when-let [idx (when (instance? ActionKey k) (:idx k))]
-    (if (empty? ks)
-      (->ActionDetails (nth log idx))
-      (-> (nth log idx)
-          (data/nav-in ks)))))
+             :v (->Actions (mapv :action (:actions dispatch)))})))))
 
 (deftype LogInspector [log]
-  dp/INavigatable
-  (nav-in [_ path]
-    (nav-in-log log path))
-
   dp/IRenderDictionary
   (render-dictionary [_ opt]
     (hiccup/render-entries-dictionary log opt (get-action-log log)))
 
   dp/IRenderSource
   (render-source [_ opt]
-    (hiccup/render-source log opt)))
+    (hiccup/render-source
+     (mapv (:entries log) (:chronology log))
+     opt))
+
+  p/Datafiable
+  (datafy [_]
+    log))
 
 (defn event? [x]
   (when x
@@ -153,89 +305,106 @@
   #?(:cljs (.now js/performance)
      :clj  (/ (System/nanoTime) 1e6)))
 
-(defn round-tenth [ms]
-  (/ (Math/round (* ms 10)) 10.0))
+(defn find-event [dispatch-data]
+  (->> (cond
+         (map? dispatch-data)
+         (vals dispatch-data)
 
-(defn ^{:indent 1} update-current [log f & args]
-  (swap! log (fn [entries]
-               (apply update entries (dec (count entries)) f args))))
+         (coll? dispatch-data)
+         dispatch-data)
+       (filter event?)
+       first))
+
+(defn get-log-idx [log ctx]
+  (.indexOf (mapv :id @log) (::id ctx)))
+
+(defn ^{:indent 2} update-log-entry [log ctx f & args]
+  (apply swap! log update-in [:entries (::id ctx)] f args))
 
 (def conjv (fnil conj []))
-(def intov (fnil into []))
 
-(defn before-dispatch [log {:keys [dispatch-data state actions] :as ctx}]
-  (let [event (->> (cond
-                     (map? dispatch-data)
-                     (vals dispatch-data)
-
-                     (coll? dispatch-data)
-                     dispatch-data
-
-                     :else
-                     nil)
-                   (filter event?)
-                   first)]
-    (swap! log conj (cond-> {:dispatched-at (now)
-                             :actions (->actions actions)
-                             :dispatch-data dispatch-data
-                             :dispatch-start (now-ms)
-                             :state state}
-                      event (assoc :dom-event event)))
-    ctx))
-
-(defn ->error [error]
-  (cond-> error
-    (:action error) (update :action ->action)
-    (:effect error) (update :effect ->action)
-    (:effects error) (update :effects ->actions)))
+(defn before-dispatch [log {:keys [dispatch-data] :as ctx}]
+  (let [id (random-uuid)
+        event (find-event dispatch-data)
+        ms (now-ms)]
+    (swap! log
+           #(-> (assoc-in % [:entries id]
+                          (cond-> {:id id
+                                   :dispatched-at (now)
+                                   :actions []
+                                   :dispatch-data dispatch-data}
+                            event (assoc :dom-event event)))
+                (update :chronology conj id)))
+    (assoc ctx
+           ::id id
+           ::dispatch-start ms
+           ::path [:actions]
+           ::before-interpolate ms)))
 
 (defn after-dispatch [log ctx]
-  (update-current log
+  (update-log-entry log ctx
     (fn [entry]
-      (cond-> (-> (update entry :effects ->actions)
-                  (assoc :dispatch-elapsed (round-tenth (- (now-ms) (:dispatch-start entry))))
-                  (dissoc :dispatch-start)
-                  (assoc :results (for [res (:results ctx)]
-                                    (cond-> res
-                                      (:effect res) (update :effect ->action)
-                                      (:effects res) (update :effects ->actions)))))
+      (cond-> (assoc entry :dispatch-elapsed
+                     (measure-elapsed @log (now-ms) (::dispatch-start ctx)))
         (= 1 (count (:errors ctx)))
-        (assoc :error (->error (first (:errors ctx))))
+        (assoc :error (first (:errors ctx)))
 
         (< 1 (count (:errors ctx)))
-        (assoc :errors (map ->error (:errors ctx))))))
+        (assoc :errors (:errors ctx)))))
   ctx)
+
+(defn before-action [log ctx]
+  (let [idx (-> (get log (get-log-idx log ctx))
+                (get-in (::path ctx))
+                count)
+        now (now-ms)]
+    (update-log-entry log ctx
+      (fn [entry]
+        (update-in entry (::path ctx) conjv
+                   (-> (if-let [details (meta (:action ctx))]
+                         {:action (:nexus/action details)
+                          :interpolated (:action ctx)
+                          :interpolations (->> (:nexus/interpolations details)
+                                               (map (juxt :placeholder :resolution))
+                                               (into {}))
+                          :interpolation-elapsed (measure-elapsed @log now (::before-interpolate ctx))}
+                         {:action (:action ctx)})
+                       (assoc :state (:state ctx))))))
+    (-> (update ctx ::path into [idx :expansions])
+        (assoc ::before-action now))))
 
 (defn after-action [log ctx]
-  (update-current log update :expansions conjv
-                  {:action (->action (or (:nexus/action (meta (:action ctx)))
-                                         (:action ctx)))
-                   :expansion (->actions (:actions ctx))})
-  ctx)
+  (update-log-entry log ctx
+    (fn [entry]
+      (assoc-in entry (conj (pop (::path ctx)) :expansion-elapsed)
+                (measure-elapsed @log (now-ms) (::before-action ctx)))))
+  (update ctx ::path #(pop (pop %))))
 
 (defn before-effect [log ctx]
-  (update-current log
+  (update-log-entry log ctx
     (fn [entry]
-      (if (:effects ctx)
-        (-> entry
-            (update :expansions intov
-                    (->> (:effects ctx)
-                         (filterv (comp :nexus/action meta))
-                         (mapv (fn [effect]
-                                 {:action (->action (:nexus/action (meta effect)))
-                                  :expansion (->action effect)}))))
-            (update :effects intov (:effects ctx)))
-        (-> (cond-> entry
-              (:nexus/action (meta (:effect ctx)))
-              (update :expansions conjv
-                      {:action (->action (:nexus/action (meta (:effect ctx))))
-                       :expansion (->action (:effect ctx))}))
-            (update :effects conjv (:effect ctx))))))
-  ctx)
+      (update-in entry (::path ctx) conjv
+                 {:effect (:effect ctx)
+                  :state (:state ctx)})))
+  (-> (update ctx ::path conj (dec (count (-> (:entries @log)
+                                              (get (::id ctx))
+                                              (get-in (::path ctx))))))
+      (assoc ::before-effectuate (now-ms))))
+
+(defn after-effect [log ctx]
+  (let [now (now-ms)]
+    (update-log-entry log ctx
+      (fn [entry]
+        (update-in entry (::path ctx) into
+                   {:result (:res ctx)
+                    :effect-elapsed (measure-elapsed @log now (::before-effectuate ctx))}))))
+  (update ctx ::path pop))
 
 (defn get-interceptor [log]
   {:id ::inspector
    :before-dispatch #(before-dispatch log %)
    :after-dispatch #(after-dispatch log %)
+   :before-action #(before-action log %)
    :after-action #(after-action log %)
-   :before-effect #(before-effect log %)})
+   :before-effect #(before-effect log %)
+   :after-effect #(after-effect log %)})
