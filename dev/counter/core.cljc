@@ -3,13 +3,13 @@
             [replicant.dom :as r]))
 
 (def nexus
-  {:system->state deref
-   :effects
+  {:nexus/system->state deref
+   :nexus/effects
    {:actions/save
     (fn [_ system path v]
       (swap! system assoc-in path v))}
 
-   :actions
+   :nexus/actions
    {:actions/step
     (fn [state path]
       [[:actions/save path (+ (get-in state path) (or (state :step-size) 1))]])
@@ -22,7 +22,7 @@
     (fn [_ s]
       [[:actions/save [:step-size] s]])}
 
-   :placeholders
+   :nexus/placeholders
    {:event.target/value
     #(some-> % :replicant/dom-event .-target .-value)
 
@@ -38,6 +38,10 @@
     [:button.btn
      {:on {:click [[:actions/step [:number]]]}}
      "Count!"]
+    [:button.btn
+     {:on {:click [[:actions/step [:number]]
+                   [:actions/step [:number]]]}}
+     "Double count!"]
     [:div.flex.flex-col
      [:label
       "Step size"
