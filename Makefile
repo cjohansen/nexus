@@ -15,4 +15,4 @@ deploy: nexus.jar
 
 .PHONY: shadow
 shadow:
-	npx shadow-cljs watch portfolio
+	npx shadow-cljs watch portfolio sample
