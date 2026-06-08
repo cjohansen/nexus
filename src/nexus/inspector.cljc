@@ -95,7 +95,9 @@
 (defrecord ActionDetail [dispatched-action]
   dp/IRenderInline
   (render-inline [_ opt]
-    (render-action (:action dispatched-action) opt))
+    (-> (or (:action dispatched-action)
+            (:effect dispatched-action))
+        (render-action opt)))
 
   dp/IRenderDictionary
   (render-dictionary [_ opt]
@@ -116,18 +118,26 @@
 (defrecord ActionKey [dispatched-action]
   dp/IRenderInline
   (render-inline [_ opt]
-    (hiccup/render-inline (first (:action dispatched-action)) (no-hiccup opt)))
+    (-> (or (:action dispatched-action)
+            (:effect dispatched-action))
+        first
+        (hiccup/render-inline (no-hiccup opt))))
 
   dp/IKeyLookup
   (lookup [_ _]
     (->ActionDetail dispatched-action)))
 
 (defn get-action-entries [{:keys [action interpolated interpolations interpolation-elapsed
-                                  expansions expansion-elapsed effects state]}]
+                                  state expansions expansion-elapsed effect effect-elapsed result]}]
   (concat
-   [{:label (hiccup/string-label "Action")
-     :k :action
-     :v (->Action action)}]
+   (when action
+     [{:label (hiccup/string-label "Action")
+       :k :action
+       :v (->Action action)}])
+   (when effect
+     [{:label (hiccup/string-label "Effect")
+       :k :effect
+       :v (->Action effect)}])
    (when interpolations
      [{:label (hiccup/string-label "Interpolations")
        :k :interpolations
@@ -141,25 +151,41 @@
    [{:label (hiccup/string-label "State")
      :k :state
      :v state}]
-   (when (seq expansions)
-     (conj (->> expansions
-                (mapv
-                 (fn [action]
-                   (when (:action action)
-                     {:k (->ActionKey action)
-                      :v (->ActionDetail action)})))
-                (filterv second)
-                (mapv (fn [idx entry]
-                        (cond-> entry
-                          (= 0 idx) (assoc :label (hiccup/string-label "Expanded actions"))))
-                      (range)))
-           {:label (hiccup/string-label "Expansion elapsed")
-            :k :expansion-elapsed
-            :v expansion-elapsed}))
-   (when effects
-     [{:label (hiccup/string-label "Effects")
-       :k :effects
-       :v (->Actions effects)}])))
+   (when (seq (filter :action expansions))
+     (->> expansions
+          (mapv
+           (fn [expansion]
+             (when (:action expansion)
+               {:k (->ActionKey expansion)
+                :v (->ActionDetail expansion)})))
+          (filterv second)
+          (mapv (fn [idx entry]
+                  (cond-> entry
+                    (= 0 idx) (assoc :label (hiccup/string-label "Expanded actions"))))
+                (range))))
+   (when expansion-elapsed
+     [{:label (hiccup/string-label "Expansion elapsed")
+       :k :expansion-elapsed
+       :v expansion-elapsed}])
+   (when (seq (filter :effect expansions))
+     (->> expansions
+          (mapv
+           (fn [expansion]
+             (when (:effect expansion)
+               {:k (->ActionKey expansion)
+                :v (->ActionDetail expansion)})))
+          (filterv second)
+          (mapv (fn [idx entry]
+                  (cond-> entry
+                    (= 0 idx) (assoc :label (hiccup/string-label "Effects"))))
+                (range))))
+   (when effect-elapsed
+     [{:label (hiccup/string-label "Result")
+       :k :result
+       :v result}
+      {:label (hiccup/string-label "Effect elapsed")
+       :k :effect-elapsed
+       :v effect-elapsed}])))
 
 (declare ->Dispatch)
 
@@ -198,9 +224,9 @@
           (= 0 idx) (assoc :label (hiccup/string-label "Actions"))))
       actions))
    (map-indexed
-    (fn [idx {:keys [effects]}]
-      (cond-> {:v (->Actions effects)
-               :path [:effects idx]}
+    (fn [idx effect-expansion]
+      (cond-> {:k (->ActionKey effect-expansion)
+               :v (->ActionDetail effect-expansion)}
         (= 0 idx) (assoc :label (hiccup/string-label "Effects"))))
     effects)
    (when error
@@ -395,9 +421,10 @@
   (let [now (now-ms)]
     (update-log-entry log ctx
       (fn [entry]
-        (update-in entry (::path ctx) into
-                   {:result (:res ctx)
-                    :effect-elapsed (measure-elapsed @log now (::before-effectuate ctx))}))))
+        (let [entry (update-in entry (::path ctx) into
+                               {:result (:res ctx)
+                                :effect-elapsed (measure-elapsed @log now (::before-effectuate ctx))})]
+          (update entry :effects conjv (get-in entry (::path ctx)))))))
   (update ctx ::path pop))
 
 (defn get-interceptor [log]

@@ -8,12 +8,13 @@
 (def add-task-tx
   {:action [:db/save {:task/id "task-id"
                       :task/title "Do chores"}]
-   :effects [{:effects [[:db/transact
-                         [{:task/id "task-id"
-                           :task/title "Do chores"}]]]
-              :state {:tasks []
-                      :transient {:syncing {"task-id" true}}}
-              :result [1 :form/id "form" 536870913 true]}]})
+   :expansions [{:effect [:db/transact
+                          [{:task/id "task-id"
+                            :task/title "Do chores"}]]
+                 :state {:tasks []
+                         :transient {:syncing {"task-id" true}}}
+                 :result [1 :form/id "form" 536870913 true]
+                 :effect-elapsed {:ms 1.0 :slow? false}}]})
 
 (def add-task-action
   {:action [:task/add "task-id" {:task/title [:input/value]}]
@@ -22,10 +23,14 @@
    :interpolation-elapsed (inspector/->timing 12)
    :expansion-elapsed (inspector/->timing 23)
    :expansions [{:action [:dev/log :create-task "task-id" "Do chores"]
-                 :effects {:effects [[:dev/log :create-task "task-id" "Do chores"]]}
+                 :expansions [{:effect [:dev/log :create-task "task-id" "Do chores"]
+                               :result nil
+                               :state {:tasks []
+                                       :transient {:syncing {"task-id" true}}}
+                               :effect-elapsed {:ms 1.0 :slow? false}}]
                  :state {:tasks []
                          :transient {:syncing {"task-id" true}}}
-                 :result nil}
+                 :expansion-elapsed {:ms 0.1, :slow? false}}
                 add-task-tx]
    :state {:tasks []
            :transient {:syncing {"task-id" true}}}})
@@ -47,10 +52,11 @@
                 [:actions/execute-command
                  {:command/data {:person/tiltalenavn "Christian"}
                   :command/kind :commands/sett-mitt-tiltalenavn}]
-                :effects
-                {:effects [[:actions/execute-command
-                            {:command/data {:person/tiltalenavn "Christian"}
-                             :command/kind :commands/sett-mitt-tiltalenavn}]]}}]}
+                :expansions
+                [{:effect [:actions/execute-command
+                           {:command/data {:person/tiltalenavn "Christian"}
+                            :command/kind :commands/sett-mitt-tiltalenavn}]
+                  :effect-elapsed {:ms 1.0 :slow? false}}]}]}
 
     #uuid "110b460f-57b2-4e15-be8c-359149d3db62"
     {:id #uuid "110b460f-57b2-4e15-be8c-359149d3db62"
@@ -136,7 +142,7 @@
      :dispatched-at #inst "2025-06-11T08:06:58"
      :dispatch-elapsed (inspector/->timing 31)
      :actions [add-task-action]
-     :effects [{:effects [(dissoc add-task-tx :action)]}]
+     :effects (:expansions add-task-tx)
      :errors [{}]}
 
     #uuid "81425764-6219-43f1-aa61-07110ea16fca"
@@ -144,7 +150,7 @@
      :dispatched-at #inst "2025-06-11T08:07:23"
      :dispatch-elapsed (inspector/->timing 12)
      :actions [add-task-action]
-     :effects [{:effects [(dissoc add-task-tx :action)]}]}
+     :effects (:expansions add-task-tx)}
 
     #uuid "29e14b68-a5a8-4eac-8ed8-ab58df40480f"
     {:id #uuid "29e14b68-a5a8-4eac-8ed8-ab58df40480f"
@@ -152,22 +158,27 @@
      :dispatch-elapsed (inspector/->timing 233 {:slow? true})
      :dispatch-data {:number 42}
      :effects (concat
-               [{:effects [[:state/assoc-in [:transient :syncing "task-id"] true]]
+               [{:effect [:state/assoc-in [:transient :syncing "task-id"] true]
+                 :effect-elapsed {:ms 1.0 :slow? false}
                  :state {:tasks []}
                  :result {:tasks []
                           :transient {:syncing {"task-id" true}}}
                  :dispatches [{:id #uuid "2b105ea8-99cc-4d7b-aabf-fc2568c56d0a"
                                :dispatched-at #inst "2025-06-11T08:09:13"
                                :actions [[:transient/assoc-in [:syncing "task-id"] false]]}]}
-                {:effects [[:dev/log :create-task "task-id" "Do chores"]]
+                {:effect [:dev/log :create-task "task-id" "Do chores"]
+                 :effect-elapsed {:ms 1.0 :slow? false}
                  :state {:tasks []
                          :transient {:syncing {"task-id" true}}}
                  :result nil}]
-               (:effects add-task-tx))
+               (:expansions add-task-tx))
      :actions
      [{:action [:transient/assoc-in [:syncing "task-id"] true]
-       :expansions [{:effects {:effects [[:state/assoc-in [:transient :syncing "task-id"] true]]}
-                     :state {:tasks []}}]
+       :expansions [{:effect [:state/assoc-in [:transient :syncing "task-id"] true]
+                     :state {:tasks []}
+                     :effect-elapsed {:ms 1.0 :slow? false}
+                     :result {:tasks []
+                              :transient {:syncing {"task-id" true}}}}]
        :expansion-elapsed (inspector/->timing 16)
        :state {:tasks []}}
       add-task-action]
@@ -188,14 +199,16 @@
      :dispatched-at #inst "2025-06-11T08:09:13"
      :dispatch-elapsed (inspector/->timing 65)
      :dispatch-data {:number 42}
-     :effects [{:effects [[:state/assoc-in [:transient :syncing "task-id"] false]]
+     :effects [{:effect [:state/assoc-in [:transient :syncing "task-id"] false]
+                :effect-elapsed {:ms 1.0 :slow? false}
                 :state {:tasks []
                         :transient {:syncing {"task-id" true}}}
                 :result {:tasks []
                          :transient {:syncing {"task-id" false}}}}]
      :actions
      [{:action [:transient/assoc-in [:syncing "task-id"] false]
-       :expansions [{:effects [[:state/assoc-in [:transient :syncing "task-id"] false]]
+       :expansions [{:effect [:state/assoc-in [:transient :syncing "task-id"] false]
+                     :effect-elapsed {:ms 1.0 :slow? false}
                      :state {:tasks []
                              :transient {:syncing {"task-id" true}}}}]
        :expansion-elapsed (inspector/->timing 16)
