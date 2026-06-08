@@ -8,21 +8,26 @@
    (-> (into {} opts)
        (update :slow-threshold #(or % 100)))))
 
-(defn install-logger [nexus log]
-  (-> nexus
-      (update :nexus/interceptors vec)
-      (update :nexus/interceptors conj (inspector/get-interceptor log))))
+(defn get-render-interceptor [log {:keys [label ns-aliases]}]
+  {:after-dispatch
+   (fn [ctx]
+     (prn @log)
+     (dataspex/inspect (or label "Actions")
+       (inspector/->LogInspector @log)
+       (cond-> {:track-changes? false
+                :auditable? false}
+         ns-aliases (assoc :ns-aliases ns-aliases)))
+     ctx)})
 
-(defn install-inspector [log & [{:keys [label ns-aliases]}]]
-  (add-watch
-   log ::inspect
-   (fn [_ _ _ the-log]
-     (when (contains? (last the-log) :results)
-       (dataspex/inspect (or label "Actions")
-         (inspector/->LogInspector the-log)
-         (cond-> {:track-changes? false
-                  :auditable? false}
-           ns-aliases (assoc :ns-aliases ns-aliases)))))))
+(defn install-logger [nexus log & [opt]]
+  (update nexus :nexus/interceptors
+          (fn [interceptors]
+            (-> (vec interceptors)
+                (conj (get-render-interceptor log opt))
+                (conj (inspector/get-interceptor log))))))
+
+(defn ^{:deprecated "2026.06.1"} install-inspector [_log & [_opt]]
+  )
 
 (defn ^:export inspect
   {:arglists '[[]
@@ -30,4 +35,4 @@
   [& [opt]]
   (let [log (create-log)]
     (nxr/register-interceptor! (inspector/get-interceptor log))
-    (install-inspector log opt)))
+    (nxr/register-interceptor! (get-render-interceptor log opt))))
