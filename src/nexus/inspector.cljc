@@ -127,6 +127,61 @@
   (lookup [_ _]
     (->ActionDetail dispatched-action)))
 
+(defn get-error-entries [{:keys [effect err phase trace action]}]
+  (concat
+   (when phase
+     [{:label (hiccup/string-label "Phase")
+       :k :phase
+       :v phase}])
+   (when effect
+     [{:label (hiccup/string-label "Effect")
+       :k :effect
+       :v (->Action effect)}])
+   (when action
+     [{:label (hiccup/string-label "Action")
+       :k :action
+       :v (->Action action)}])
+   (when trace
+     (map-indexed
+      (fn [idx action]
+        (cond-> {:v (->Action action)}
+          (= 0 idx) (assoc :label (hiccup/string-label "Trace"))))
+      trace))
+   (when err
+     [{:label (hiccup/string-label "Error")
+       :k :err
+       :v err}])))
+
+(defrecord ErrorDetail [error]
+  dp/IRenderInline
+  (render-inline [_ opt]
+    [:div
+     (:phase error) " "
+     (hiccup/render-inline (:err error) opt)])
+
+  dp/IRenderDictionary
+  (render-dictionary [_ opt]
+    (->> (get-error-entries error)
+         (hiccup/render-entries-dictionary error (no-hiccup opt))))
+
+  dp/INavigatable
+  (nav-in [_ [k & ks]]
+    (cond-> (if k
+              (get error k)
+              error)
+      ks (data/nav-in ks))))
+
+(defrecord ErrorKey [error]
+  dp/IRenderInline
+  (render-inline [_ opt]
+    [::ui/info
+     [::icons/warning {:style {:color "var(--error-fg)"}}]
+     (hiccup/render-inline (first (or (:effect error) (:action error))) opt)])
+
+  dp/IKeyLookup
+  (lookup [_ _]
+    (->ErrorDetail error)))
+
 (defn get-action-entries [{:keys [action interpolated interpolations interpolation-elapsed
                                   state expansions expansion-elapsed effect effect-elapsed result]}]
   (concat
@@ -234,9 +289,12 @@
        :k :error
        :v error}])
    (when errors
-     [{:label (hiccup/string-label "Errors")
-       :k :errors
-       :v errors}])
+     (map-indexed
+      (fn [idx error]
+        (cond-> {:k (->ErrorKey error)
+                 :v (->ErrorDetail error)}
+          (= 0 idx) (assoc :label (hiccup/string-label "Errors"))))
+      errors))
    (let [dispatches (mapcat :dispatches effects)]
      (->> dispatches
           (map-indexed
@@ -372,10 +430,7 @@
     (fn [entry]
       (cond-> (assoc entry :dispatch-elapsed
                      (measure-elapsed @log (now-ms) (::dispatch-start ctx)))
-        (= 1 (count (:errors ctx)))
-        (assoc :error (first (:errors ctx)))
-
-        (< 1 (count (:errors ctx)))
+        (:errors ctx)
         (assoc :errors (:errors ctx)))))
   ctx)
 
