@@ -10,27 +10,35 @@
 (def nexus
   {:nexus/system->state deref
    :nexus/effects
-   {:actions/save
+   {:effects/save
     (fn [_ system path v]
-      (swap! system assoc-in path v))}
+      (swap! system assoc-in path v))
+
+    :effects/fail
+    (fn [_ _]
+      (throw (ex-info "Oh noes!" {:boom? true})))}
 
    :nexus/actions
    {:actions/step
     (fn [state path]
-      [[:actions/save path (+ (get-in state path) (or (state :step-size) 1))]])
+      [[:effects/save path (+ (get-in state path) (or (state :step-size) 1))]])
 
     :actions/step-slowly
     (fn [state path]
       (block 500)
-      [[:actions/save path (+ (get-in state path) (or (state :step-size) 1))]])
+      [[:effects/save path (+ (get-in state path) (or (state :step-size) 1))]])
 
     :actions/reset
     (fn [_ path]
-      [[:actions/save path 0]])
+      [[:effects/save path 0]])
 
     :actions/set-step-size
     (fn [_ s]
-      [[:actions/save [:step-size] s]])}
+      [[:effects/save [:step-size] s]])
+
+    :actions/plan-to-fail
+    (fn [_]
+      [[:effects/fail]])}
 
    :nexus/placeholders
    {:event.target/value
@@ -61,6 +69,10 @@
      [:button.btn
       {:on {:click [[:actions/step-slowly [:number]]]}}
       "Count slowly"]]
+    [:div
+     [:button.btn
+      {:on {:click [[:actions/plan-to-fail]]}}
+      "Fail"]]
     [:div.flex.flex-col
      [:label
       "Step size"
