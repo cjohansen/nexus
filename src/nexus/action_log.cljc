@@ -4,6 +4,8 @@
             [nexus.registry :as nxr]))
 
 (defn create-log [& [opts]]
+  {:arglists '[[]
+               [{:keys [slow-threshold max-entries max-age]}]]}
   (atom
    (-> (into {} opts)
        (update :slow-threshold #(or % 100)))))
@@ -30,8 +32,8 @@
 
 (defn ^:export inspect
   {:arglists '[[]
-               [{:keys [label ns-aliases]}]]}
+               [{:keys [label ns-aliases slow-threshold max-entries max-age]}]]}
   [& [opt]]
-  (let [log (create-log)]
+  (let [log (create-log opt)]
     (nxr/register-interceptor! (inspector/get-interceptor log))
     (nxr/register-interceptor! (get-render-interceptor log opt))))
