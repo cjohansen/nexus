@@ -421,31 +421,7 @@ before you optimize.
 <a id="batching"></a>
 ### Batching effects
 
-`:task/edit` expands into multiple `:effects/save` effects. With the current
-implementation, this will cause several calls to `swap!`. If you want action
-dispatch to be atomic, you can _batch_ `:effects/save`. To do this, mark the
-handler function with `:nexus/batch` meta data, and change its signature. It
-will now receive a collection of effect arguments:
-
-```clj
-(def nexus
-  {,,,
-   :nexus/effects
-   {:effects/save
-    ^:nexus/batch
-    (fn [_ctx system path-vs]
-      (swap! system
-       (fn [state]
-         (reduce (fn [acc [path v]]
-                   (assoc-in acc path v))
-                 state path-vs))))}})
-```
-
-With this minor change, every `:effects/save` will be handled together,
-resulting in only a single `swap!`.
-
-Batching effects may cause them to be executed out of order. Nexus must expand
-all actions with action handlers before any batched effect can be executed.
+Batching is deprecated, see [the dedicated document](batching.md) for details.
 
 ### Asynchronous effects
 
@@ -602,6 +578,7 @@ there are more than one effect that swaps on the `system` atom. To ensure each
 dispatch only results in a single render (which will give you the best rendering
 performance), you have a few options.
 
+<a id="rendering"></a>
 ### Rendering from an interceptor
 
 If you only need to trigger rendering from a Nexus dispatch, you can use an
@@ -653,8 +630,8 @@ dispatch calls triggered by effects:
 ### Batching effects
 
 By batching the effects that swap on the system, you ensure that each dispatch
-only results in at most one swap, thus one render. However, this approach has
-limitations of its own. Read more about [batching](#batching) above.
+only results in at most one swap, thus one render. However, this approach is
+discouraged and deprecated, see the [batching document](batching.md).
 
 <a id="dev-tooling"></a>
 ## Development tooling
@@ -1091,10 +1068,13 @@ and [Teodor Heggelund](https://play.teod.eu/)
 
 ## Changelog
 
-### 2026.04.1
+### 2026.06.1
 
 Change execution model to eagerly execute commands, see [relevant
 ADR](/doc/adr01-instantly-process-effects.md).
+
+Deprecate batching, and move it to an opt-in interceptor. See section on
+batching above.
 
 Thanks [Cormac Cannon](https://github.com/cormacc)!
 
