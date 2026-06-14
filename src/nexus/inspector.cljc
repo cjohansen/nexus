@@ -96,9 +96,10 @@
 (defrecord ActionDetail [dispatched-action]
   dp/IRenderInline
   (render-inline [_ opt]
-    (-> (or (:action dispatched-action)
-            (:effect dispatched-action))
-        (render-action opt)))
+    (or (some-> (or (:action dispatched-action)
+                    (:effect dispatched-action))
+                (render-action opt))
+        (render-actions (:effects dispatched-action) opt)))
 
   dp/IRenderDictionary
   (render-dictionary [_ opt]
@@ -120,7 +121,8 @@
   dp/IRenderInline
   (render-inline [_ opt]
     (-> (or (:action dispatched-action)
-            (:effect dispatched-action))
+            (:effect dispatched-action)
+            (first (:effects dispatched-action)))
         first
         (hiccup/render-inline (no-hiccup opt))))
 
@@ -184,7 +186,7 @@
     (->ErrorDetail error)))
 
 (defn get-action-entries [{:keys [action interpolated interpolations interpolation-elapsed
-                                  state expansions expansion-elapsed effect effect-elapsed result]}]
+                                  state expansions expansion-elapsed effect effects effect-elapsed result]}]
   (concat
    (when action
      [{:label (hiccup/string-label "Action")
@@ -194,6 +196,10 @@
      [{:label (hiccup/string-label "Effect")
        :k :effect
        :v (->Action effect)}])
+   (when effects
+     [{:label (hiccup/string-label "Effects")
+       :k :effects
+       :v (->Actions effects)}])
    (when interpolations
      [{:label (hiccup/string-label "Interpolations")
        :k :interpolations
@@ -360,7 +366,11 @@
   (let [k (->dispatch-key dispatch)]
     (cons {:label (->DispatchLabel dispatch level)
            :k k
-           :v (->Actions (mapv :action (:actions dispatch)))}
+           :v (->> (:actions dispatch)
+                   (mapcat #(if-let [one (or (:action %) (:effect %))]
+                              [one]
+                              (:effects %)))
+                   ->Actions)}
           (->> (:dispatches dispatch)
                (map entries)
                (mapcat #(render-dispatch % entries (inc level)))))))
@@ -502,8 +512,8 @@
   (update-log-entry log ctx
     (fn [entry]
       (update-in entry (::path ctx) conjv
-                 {:effect (:effect ctx)
-                  :state (:state ctx)})))
+                 (merge {:state (:state ctx)}
+                        (select-keys ctx [:effect :effects])))))
   (-> (update ctx ::path conj (dec (count (-> (:entries @log)
                                               (get (::id ctx))
                                               (get-in (::path ctx))))))

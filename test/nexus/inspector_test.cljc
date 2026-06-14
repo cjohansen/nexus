@@ -3,43 +3,45 @@
             [clojure.walk :as walk]
             [nexus.action-log :as action-log]
             [nexus.core :as nexus]
-            [nexus.inspector :as inspector])
+            [nexus.inspector :as inspector]
+            [nexus.batching :as batching])
   #?(:clj (:import (java.util Date))))
 
 (def nexus
-  {:nexus/system->state deref
+  (-> {:nexus/system->state deref
 
-   :nexus/actions
-   {:actions/inc
-    (fn [_ path]
-      [[:actions/plus path 1]])
+       :nexus/actions
+       {:actions/inc
+        (fn [_ path]
+          [[:actions/plus path 1]])
 
-    :actions/plus
-    (fn [state path n]
-      (let [curr (get-in state path 0)]
-        [[:effects/save path (+ curr n)]
-         [:effects/save [:old path] curr]]))}
+        :actions/plus
+        (fn [state path n]
+          (let [curr (get-in state path 0)]
+            [[:effects/save path (+ curr n)]
+             [:effects/save [:old path] curr]]))}
 
-   :nexus/effects
-   {:effects/save
-    (fn [_ store k v]
-      (swap! store assoc-in k v))
+       :nexus/effects
+       {:effects/save
+        (fn [_ store k v]
+          (swap! store assoc-in k v))
 
-    :effects/save-batch
-    ^:nexus/batch
-    (fn [_ store kvs]
-      (swap! store #(reduce (fn [s [k v]] (assoc s k v)) % kvs)))
+        :effects/save-batch
+        ^:nexus/batch
+        (fn [_ store kvs]
+          (swap! store #(reduce (fn [s [k v]] (assoc s k v)) % kvs)))
 
-    ;; I don't suggest anyone do this in a production app 😅
-    ;; Somehow we gotta test this stuff!
-    :effects/dispatch
-    (fn [{:keys [dispatch]} store actions]
-      (dispatch actions))}
+        ;; I don't suggest anyone do this in a production app 😅
+        ;; Somehow we gotta test this stuff!
+        :effects/dispatch
+        (fn [{:keys [dispatch]} _ actions]
+          (dispatch actions))}
 
-   :nexus/placeholders
-   {:secret/number
-    (fn [{:keys [num]}]
-      num)}})
+       :nexus/placeholders
+       {:secret/number
+        (fn [{:keys [num]}]
+          num)}}
+      batching/install))
 
 (defn sequentially [ids]
   (let [ids! (atom ids)]
@@ -269,4 +271,40 @@
                inspector/get-action-log
                (->> (mapv (comp :dispatched-at :k))))
            [#inst "2026-06-03T08:52:00.000-00:00"
-            #inst "2026-06-03T08:49:00.000-00:00"]))))
+            #inst "2026-06-03T08:49:00.000-00:00"])))
+
+  (testing "Understands batched effects"
+    (is (= (->> (let [dispatch (make-dispatcher {:number 0})]
+                  (dispatch [[:effects/save-batch :a 1]
+                             [:effects/save-batch :b 2]
+                             [:effects/save-batch :c 3]
+                             [:effects/save-batch :d 4]]))
+                :entries
+                vals
+                (map #(select-keys % [:actions :effects])))
+           [{:actions
+             [{:state {:number 0}
+               :effects
+               [[:effects/save-batch :a 1]
+                [:effects/save-batch :b 2]
+                [:effects/save-batch :c 3]
+                [:effects/save-batch :d 4]]
+               :result {:number 0
+                        :a 1
+                        :b 2
+                        :c 3
+                        :d 4}
+               :effect-elapsed {:ms 1.0, :slow? false}}]
+             :effects
+             [{:state {:number 0}
+               :effects
+               [[:effects/save-batch :a 1]
+                [:effects/save-batch :b 2]
+                [:effects/save-batch :c 3]
+                [:effects/save-batch :d 4]],
+               :result {:number 0
+                        :a 1
+                        :b 2
+                        :c 3
+                        :d 4}
+               :effect-elapsed {:ms 1.0, :slow? false}}]}]))))
