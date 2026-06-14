@@ -15,50 +15,52 @@
                 xs)]
     (mapv m order)))
 
-(defn ^:no-doc execute-batch [nexus ctx effect-k effects k wrap-handler]
-  (if-let [f (get-in nexus [:nexus/effects effect-k])]
-    (let [v (cond-> effects
-              (= k :effect) first)
-          ret (nexus/run-interceptors (assoc ctx k v)
-                (conj (vec (:nexus/interceptors nexus))
-                      {:phase :execute-effect
-                       :before-effect (partial wrap-handler f)})
-                [:before-effect :after-effect :effect])]
-      (cond-> (dissoc ret :res)
-        (:res ret) (update :results conjv (into {k v} (select-keys ret [:res])))))
-    (update ctx :errors conjv
-            {:phase :execute-effect
-             :effect-k effect-k
-             :err (ex-info "No such effect" {:available-effects (keys (:nexus/effects nexus))})})))
+(defn ^:no-doc execute-batch [ctx effect-k effects k wrap-handler]
+  (let [nexus (:nexus ctx)]
+    (if-let [f (get-in nexus [:nexus/effects effect-k])]
+      (let [v (cond-> effects
+                (= k :effect) first)
+            ret (nexus/run-interceptors (assoc ctx k v)
+                  (conj (->> (:nexus/interceptors nexus)
+                             (remove (comp #{::interceptor} :id))
+                             vec)
+                        {:phase :execute-effect
+                         :before-effect (partial wrap-handler f)})
+                  [:before-effect :after-effect :effect])]
+        (cond-> (dissoc ret :res)
+          (:res ret) (update :results conjv (into {k v} (select-keys ret [:res])))))
+      (update ctx :errors conjv
+              {:phase :execute-effect
+               :effect-k effect-k
+               :err (ex-info "No such effect" {:available-effects (keys (:nexus/effects nexus))})}))))
 
 (defn ^:no-doc wrap-batched-effect-handler [f ctx]
   (assoc ctx :res (f ctx
                      (:system ctx)
                      (mapv next (:effects ctx)))))
 
-(defn before-effect [nexus ctx]
+(defn before-effect [ctx]
   (let [[effect-k] (:effect ctx)]
-    (if (-> nexus :nexus/effects effect-k meta :nexus/batch)
+    (if (-> ctx :nexus :nexus/effects effect-k meta :nexus/batch)
       (-> (dissoc ctx :queue :stack)
           (update ::batched conjv (:effect ctx)))
       ctx)))
 
-(defn after-dispatch [nexus ctx]
+(defn after-dispatch [ctx]
   (reduce
    (fn [ctx batch]
-     (merge ctx (-> (execute-batch nexus ctx (ffirst batch) batch :effects wrap-batched-effect-handler)
+     (merge ctx (-> (execute-batch ctx (ffirst batch) batch :effects wrap-batched-effect-handler)
                     (select-keys [:errors :results]))))
    (dissoc ctx ::batched)
    (batch-by first (::batched ctx))))
 
+(def interceptor
+  {:id ::interceptor
+   :before-effect #'before-effect
+   :after-dispatch #'after-dispatch})
+
 (defn install [nexus]
-  (update nexus :nexus/interceptors (fnil conj [])
-          {:id :batching
-           :before-effect #(before-effect nexus %)
-           :after-dispatch #(after-dispatch nexus %)}))
+  (update nexus :nexus/interceptors (fnil conj []) interceptor))
 
 (defn install! []
-  (nxr/register-interceptor!
-    {:id :batching
-     :before-effect #(before-effect (nxr/get-registry) %)
-     :after-dispatch #(after-dispatch (nxr/get-registry) %)}))
+  (nxr/register-interceptor! interceptor))
