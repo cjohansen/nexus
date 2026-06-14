@@ -11,7 +11,6 @@
 (defn get-render-interceptor [log {:keys [label ns-aliases]}]
   {:after-dispatch
    (fn [ctx]
-     (prn @log)
      (dataspex/inspect (or label "Actions")
        (inspector/->LogInspector @log)
        (cond-> {:track-changes? false
