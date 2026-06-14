@@ -34,5 +34,22 @@ receive a collection of effect arguments
 Now every `:effects/save` will be handled together, resulting in only a single
 `swap!`.
 
+If you're using the Nexus registry, you can call `nexus.batching/install!`:
+
+```clj
+(require [nexus.batching :as batching])
+
+(nxr/register-effect :effects/save
+  ^:nexus/batch
+  (fn [_ctx system path-vs]
+    (swap! system
+           (fn [state]
+             (reduce (fn [acc [path v]]
+                       (assoc-in acc path v))
+                     state path-vs)))))
+
+(batching/install!)
+```
+
 Batching effects may cause them to be executed out of order. Nexus must expand
 all actions with action handlers before any batched effect can be executed.
