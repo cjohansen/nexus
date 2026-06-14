@@ -1,5 +1,6 @@
 (ns nexus.batching
-  (:require [nexus.core :as nexus]))
+  (:require [nexus.core :as nexus]
+            [nexus.registry :as nxr]))
 
 (def conjv (fnil conj []))
 
@@ -55,3 +56,9 @@
           {:id :batching
            :before-effect #(before-effect nexus %)
            :after-dispatch #(after-dispatch nexus %)}))
+
+(defn install! []
+  (nxr/register-interceptor!
+    {:id :batching
+     :before-effect #(before-effect (nxr/get-registry) %)
+     :after-dispatch #(after-dispatch (nxr/get-registry) %)}))
