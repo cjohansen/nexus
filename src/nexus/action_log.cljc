@@ -12,7 +12,7 @@
   {:after-dispatch
    (fn [ctx]
      (dataspex/inspect (or label "Actions")
-       (inspector/->LogInspector @log)
+       (inspector/->LogInspector (assoc @log :now (inspector/now)))
        (cond-> {:track-changes? false
                 :auditable? false}
          ns-aliases (assoc :ns-aliases ns-aliases)))

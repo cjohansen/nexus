@@ -365,8 +365,23 @@
                (map entries)
                (mapcat #(render-dispatch % entries (inc level)))))))
 
-(defn get-action-log [{:keys [entries chronology]}]
-  (->> chronology
+(defn ->ms [{:keys [seconds minutes hours days]}]
+  (when (or seconds minutes hours days)
+    (* (+ (or seconds 0)
+          (* (or minutes 0) 60)
+          (* (or hours 0) 60 60)
+          (* (or days 0) 60 60 24))
+       1000)))
+
+(defn get-filtered-entries [{:keys [chronology entries max-entries max-age now]}]
+  (let [since (some->> (->ms max-age)
+                       (- (.getTime now)))]
+    (cond->> chronology
+      max-entries (take max-entries)
+      since (take-while #(<= since (.getTime (get-in entries [% :dispatched-at])))))))
+
+(defn get-action-log [{:keys [entries chronology] :as opt}]
+  (->> (get-filtered-entries opt)
        (map entries)
        (remove :dispatched-by)
        (mapcat #(render-dispatch % entries 0))))

@@ -66,7 +66,7 @@
       (swap! now inc))))
 
 (defn tick [date]
-  (#?(:clj java.util.Date. :cljs js/Date.) (+ (.getTime date) (* 60 1000))))
+  (#?(:clj Date. :cljs js/Date.) (+ (.getTime date) (* 60 1000))))
 
 (def ids
   [#uuid "5efb659e-62b8-48d9-858c-813ebaad947b"
@@ -101,17 +101,18 @@
 (defn make-dispatcher [initial-state & [opt]]
   (let [now-ms (atom 0)
         now (atom #inst "2026-06-03T08:39")
+        get-now #(swap! now tick)
         make-random-uuid (sequentially ids)
         {:keys [log nexus store]} (inspect nexus initial-state opt)]
     (fn dispatch
       ([actions]
        (dispatch nil actions))
       ([dispatch-data actions]
-       (with-redefs [inspector/now #(swap! now tick)
+       (with-redefs [inspector/now get-now
                      inspector/now-ms #(float (swap! now-ms inc))
                      clojure.core/random-uuid make-random-uuid]
          (nexus/dispatch nexus store dispatch-data actions)
-         (datafy @log))))))
+         (assoc (datafy @log) :now (get-now)))))))
 
 (defn dispatch-actions
   ([actions initial-state]
@@ -243,4 +244,29 @@
                :dispatches)
            [{:id #uuid "3228a005-6ff1-44d4-97c1-71bb7cdb4820"
              :dispatched-at #inst "2026-06-03T08:41:00.000-00:00"
-             :actions [[:actions/inc [:number]]]}]))))
+             :actions [[:actions/inc [:number]]]}])))
+
+  (testing "Truncates log to most recent dispatches"
+    (is (= (->> (let [dispatch (make-dispatcher {:number 0} {:max-entries 3})]
+                  (dispatch [[:actions/inc [:number]]])
+                  (dispatch [[:actions/inc [:number]]])
+                  (dispatch [[:actions/inc [:number]]])
+                  (dispatch [[:actions/inc [:number]]])
+                  (dispatch [[:actions/inc [:number]]]))
+                inspector/get-action-log
+                (mapv (comp :dispatched-at :k)))
+           [#inst "2026-06-03T08:52:00.000-00:00"
+            #inst "2026-06-03T08:49:00.000-00:00"
+            #inst "2026-06-03T08:46:00.000-00:00"])))
+
+  (testing "Truncates log by clock"
+    (is (= (-> (let [dispatch (make-dispatcher {:number 0} {:max-age {:minutes 5}})]
+                 (dispatch [[:actions/inc [:number]]])
+                 (dispatch [[:actions/inc [:number]]])
+                 (dispatch [[:actions/inc [:number]]])
+                 (dispatch [[:actions/inc [:number]]])
+                 (dispatch [[:actions/inc [:number]]]))
+               inspector/get-action-log
+               (->> (mapv (comp :dispatched-at :k))))
+           [#inst "2026-06-03T08:52:00.000-00:00"
+            #inst "2026-06-03T08:49:00.000-00:00"]))))
