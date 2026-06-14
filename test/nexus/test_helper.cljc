@@ -19,6 +19,9 @@
               (fn? x)
               ::fn
 
+              (:nexus/system->state x)
+              'nexus
+
               :else x))
           (ex-data e))})
 
