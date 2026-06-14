@@ -3,7 +3,8 @@
             [clojure.walk :as walk]
             [nexus.action-log :as action-log]
             [nexus.core :as nexus]
-            [nexus.inspector :as inspector]))
+            [nexus.inspector :as inspector])
+  #?(:clj (:import (java.util Date))))
 
 (def nexus
   {:nexus/system->state deref
@@ -64,15 +65,66 @@
     (fn []
       (swap! now inc))))
 
+(defn tick [date]
+  (#?(:clj java.util.Date. :cljs js/Date.) (+ (.getTime date) (* 60 1000))))
+
+(def ids
+  [#uuid "5efb659e-62b8-48d9-858c-813ebaad947b"
+   #uuid "3228a005-6ff1-44d4-97c1-71bb7cdb4820"
+   #uuid "ec1a7cd8-9d7b-4e62-a39a-09ff60ac0975"
+   #uuid "cd4f965d-c0bf-4f43-b5b1-9cc703f7d218"
+   #uuid "62a2e15d-877e-4db9-96ce-f1d0c6c1c745"
+   #uuid "09ca3f94-c095-4ebf-aa2c-5068db403867"
+   #uuid "2c311575-fce5-453d-91d2-fe97530e3577"
+   #uuid "22631f75-a8bf-4c7e-ac6d-1b2b49bc51cf"
+   #uuid "92b4a9c9-06cc-4064-9353-b537524cc7df"
+   #uuid "40456529-599f-4fec-be5a-e630df35e0ca"
+   #uuid "2f8eac06-21a2-4587-adc7-9348605fa187"
+   #uuid "fff8a807-90e2-48d5-bfa1-42bdc0c06737"
+   #uuid "2615c909-7b20-4205-9185-f40e37925a11"
+   #uuid "8eccc4cb-2b0d-488d-9c66-6526a37d6284"
+   #uuid "32088666-1cb9-49ca-bd62-d7f8e6ae0e31"
+   #uuid "53c0ccaa-fbff-4d4a-802f-7abf0fe64b79"
+   #uuid "dd3e3ec9-85d6-4d02-8386-5a2586f14630"
+   #uuid "2a946dac-a8ff-4f0f-aa35-57403e4d2ae1"
+   #uuid "be3e24a4-e542-4cf1-8adc-a6fadc608b50"
+   #uuid "ccd78c42-1954-45ab-a54a-ff495ab5f7db"
+   #uuid "b3183659-5fad-42d4-9969-f90d547f3a71"
+   #uuid "2469bc16-600b-45b5-8155-93ab8deab7ae"
+   #uuid "95fe8041-2153-48d8-af8b-8996818f06d0"
+   #uuid "b775fa63-7190-49a9-8baf-0a825f770d34"
+   #uuid "86c16d9f-9726-4d91-9999-1469eede3909"
+   #uuid "a52872cf-012b-41e2-a1c5-193f34a89a04"
+   #uuid "777915c8-2d31-46fe-8a64-4ea452a72c48"
+   #uuid "05351867-5550-4066-b9c6-2e65c1ede77d"])
+
+(defn make-dispatcher [initial-state & [opt]]
+  (let [now-ms (atom 0)
+        now (atom #inst "2026-06-03T08:39")
+        make-random-uuid (sequentially ids)
+        {:keys [log nexus store]} (inspect nexus initial-state opt)]
+    (fn dispatch
+      ([actions]
+       (dispatch nil actions))
+      ([dispatch-data actions]
+       (with-redefs [inspector/now #(swap! now tick)
+                     inspector/now-ms #(float (swap! now-ms inc))
+                     clojure.core/random-uuid make-random-uuid]
+         (nexus/dispatch nexus store dispatch-data actions)
+         (datafy @log))))))
+
+(defn dispatch-actions
+  ([actions initial-state]
+   (dispatch-actions actions initial-state {}))
+  ([actions initial-state dispatch-data]
+   (let [dispatch (make-dispatcher initial-state)]
+     (dispatch dispatch-data actions))))
+
 (deftest logger-test
   (testing "Logs action at dispatch"
-    (is (= (let [now (atom 0)]
-             (with-redefs [inspector/now (constantly #inst "2026-06-03T08:40")
-                           inspector/now-ms #(float (swap! now inc))
-                           clojure.core/random-uuid (constantly #uuid "5efb659e-62b8-48d9-858c-813ebaad947b")]
-               (let [{:keys [log nexus store]} (inspect nexus {:number 2})]
-                 (nexus/dispatch nexus store {:num 42} [[:actions/plus [:number] [:secret/number]]])
-                 (select-keys (datafy @log) [:chronology :entries]))))
+    (is (= (-> [[:actions/plus [:number] [:secret/number]]]
+               (dispatch-actions {:number 2} {:num 42})
+               (select-keys [:chronology :entries]))
            {:chronology '(#uuid "5efb659e-62b8-48d9-858c-813ebaad947b")
             :entries
             {#uuid "5efb659e-62b8-48d9-858c-813ebaad947b"
@@ -104,13 +156,8 @@
               :dispatch-elapsed {:ms 7.0, :slow? false}}}})))
 
   (testing "Nests action expansions"
-    (is (= (-> (let [now (atom 0)]
-                 (with-redefs [inspector/now (constantly #inst "2026-06-03T08:40")
-                               inspector/now-ms #(float (swap! now inc))
-                               clojure.core/random-uuid (constantly #uuid "5efb659e-62b8-48d9-858c-813ebaad947b")]
-                   (let [{:keys [log nexus store]} (inspect nexus {:number 5})]
-                     (nexus/dispatch nexus store {:num 42} [[:actions/inc [:number]]])
-                     (datafy @log))))
+    (is (= (-> [[:actions/inc [:number]]]
+               (dispatch-actions {:number 5} {:num 42})
                :entries)
            {#uuid "5efb659e-62b8-48d9-858c-813ebaad947b"
             {:id #uuid "5efb659e-62b8-48d9-858c-813ebaad947b"
@@ -145,51 +192,30 @@
                :effect-elapsed {:ms 1.0, :slow? false}}]}})))
 
   (testing "Marks dispatch as slow according to config"
-    (is (= (->> (let [now (atom 0)]
-                  (with-redefs [inspector/now (constantly #inst "2026-06-03T08:40")
-                                inspector/now-ms #(float (swap! now inc))
-                                clojure.core/random-uuid (constantly #uuid "5efb659e-62b8-48d9-858c-813ebaad947b")]
-                    (let [{:keys [log nexus store]} (inspect nexus {:number 5} {:slow-threshold 5})]
-                      (nexus/dispatch nexus store {:num 42} [[:actions/inc [:number]]])
-                      (datafy @log))))
-                :entries
-                vals
-                first
-                :dispatch-elapsed)
+    (is (= (-> (let [dispatch (make-dispatcher {:number 5} {:slow-threshold 5})]
+                 (dispatch [[:actions/inc [:number]]]))
+               :entries
+               vals
+               first
+               :dispatch-elapsed)
            {:ms 9.0, :slow? true})))
 
   (testing "Dispatches multiple actions"
-    (is (= (->> (let [now (atom 0)]
-                  (with-redefs [inspector/now (constantly #inst "2026-06-03T08:40")
-                                inspector/now-ms #(float (swap! now inc))
-                                clojure.core/random-uuid (sequentially [#uuid "5efb659e-62b8-48d9-858c-813ebaad947b"
-                                                                        #uuid "3228a005-6ff1-44d4-97c1-71bb7cdb4820"])]
-                    (let [{:keys [log nexus store]} (inspect nexus {:number 5})]
-                      (nexus/dispatch nexus store {:num 42}
-                        [[:actions/inc [:number]]
-                         [:actions/inc [:number]]])
-                      (nexus/dispatch nexus store {:num 42}
-                        [[:actions/inc [:number]]
-                         [:actions/inc [:number]]])
-                      (datafy @log))))
-                :entries
-                vals
-                count)
+    (is (= (-> (let [dispatch (make-dispatcher {:number 5})]
+                 (dispatch [[:actions/inc [:number]]
+                            [:actions/inc [:number]]])
+                 (dispatch [[:actions/inc [:number]]
+                            [:actions/inc [:number]]]))
+               :entries
+               vals
+               count)
            2)))
 
   (testing "Adds dispatched-by"
-    (is (= (-> (let [now (atom 0)]
-                 (with-redefs [inspector/now (sequentially [#inst "2026-06-03T08:40"
-                                                            #inst "2026-06-03T08:41"])
-                               inspector/now-ms #(float (swap! now inc))
-                               clojure.core/random-uuid (sequentially [#uuid "5efb659e-62b8-48d9-858c-813ebaad947b"
-                                                                       #uuid "3228a005-6ff1-44d4-97c1-71bb7cdb4820"])]
-                   (let [{:keys [log nexus store]} (inspect nexus {:number 5})]
-                     (nexus/dispatch nexus store {:num 42}
-                       [[:actions/inc [:number]]
-                        [:effects/dispatch
-                         [[:actions/inc [:number]]]]])
-                     (datafy @log))))
+    (is (= (-> [[:actions/inc [:number]]
+                [:effects/dispatch
+                 [[:actions/inc [:number]]]]]
+               (dispatch-actions {:number 5})
                (get-in [:entries #uuid "3228a005-6ff1-44d4-97c1-71bb7cdb4820"])
                :dispatched-by)
            {:id #uuid "5efb659e-62b8-48d9-858c-813ebaad947b"
@@ -198,35 +224,19 @@
                       [:effects/dispatch [[:actions/inc [:number]]]]]})))
 
   (testing "Marks nested dispatches"
-    (is (= (-> (let [now (atom 0)]
-                 (with-redefs [inspector/now (sequentially [#inst "2026-06-03T08:40"
-                                                            #inst "2026-06-03T08:41"])
-                               inspector/now-ms #(float (swap! now inc))
-                               clojure.core/random-uuid (sequentially [#uuid "5efb659e-62b8-48d9-858c-813ebaad947b"
-                                                                       #uuid "3228a005-6ff1-44d4-97c1-71bb7cdb4820"])]
-                   (let [{:keys [log nexus store]} (inspect nexus {:number 5})]
-                     (nexus/dispatch nexus store {:num 42}
-                       [[:actions/inc [:number]]
-                        [:effects/dispatch
-                         [[:actions/inc [:number]]]]])
-                     (datafy @log))))
+    (is (= (-> [[:actions/inc [:number]]
+                [:effects/dispatch
+                 [[:actions/inc [:number]]]]]
+               (dispatch-actions {:number 5})
                (get-in [:entries #uuid "5efb659e-62b8-48d9-858c-813ebaad947b"])
                :dispatches)
            [#uuid "3228a005-6ff1-44d4-97c1-71bb7cdb4820"])))
 
   (testing "Adds nested dispatch to originating effect"
-    (is (= (-> (let [now (atom 0)]
-                 (with-redefs [inspector/now (sequentially [#inst "2026-06-03T08:40"
-                                                            #inst "2026-06-03T08:41"])
-                               inspector/now-ms #(float (swap! now inc))
-                               clojure.core/random-uuid (sequentially [#uuid "5efb659e-62b8-48d9-858c-813ebaad947b"
-                                                                       #uuid "3228a005-6ff1-44d4-97c1-71bb7cdb4820"])]
-                   (let [{:keys [log nexus store]} (inspect nexus {:number 5})]
-                     (nexus/dispatch nexus store {:num 42}
-                       [[:actions/inc [:number]]
-                        [:effects/dispatch
-                         [[:actions/inc [:number]]]]])
-                     (datafy @log))))
+    (is (= (-> [[:actions/inc [:number]]
+                [:effects/dispatch
+                 [[:actions/inc [:number]]]]]
+               (dispatch-actions {:number 5})
                (get-in [:entries #uuid "5efb659e-62b8-48d9-858c-813ebaad947b"])
                :actions
                second
