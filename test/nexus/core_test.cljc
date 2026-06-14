@@ -236,7 +236,8 @@
                 {:message "Boom!"
                  :data
                  {:ctx
-                  {:system system
+                  {:nexus 'nexus
+                   :system system
                    :actions [[:actions/plus [:number] 2]]
                    :action [:actions/plus [:number] 2]
                    :state {:state "Here"}
@@ -263,7 +264,8 @@
                 {:message "Boom!"
                  :data
                  {:ctx
-                  {:system system
+                  {:nexus 'nexus
+                   :system system
                    :actions [[:effects/save [:number] 2]]
                    :action [:actions/plus [:number] 2]
                    :state {:number 2}

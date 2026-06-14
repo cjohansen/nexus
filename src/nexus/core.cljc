@@ -152,9 +152,10 @@
           (let [handler {:phase :action-dispatch
                          :before-dispatch (partial dispatch-actions nexus dispatch!)}]
             (run-interceptors (assoc parent-ctx
+                                     :nexus nexus
                                      :system system
                                      :dispatch-data (merge dispatch-data disp-data)
                                      :actions actions)
               (conj (vec (:nexus/interceptors nexus)) handler)
               [:before-dispatch :after-dispatch])))]
-    (dissoc (dispatch! actions) :system :state :trace :queue :stack :dispatch :dispatch-data :action :actions)))
+    (dissoc (dispatch! actions) :nexus :system :state :trace :queue :stack :dispatch :dispatch-data :action :actions)))
