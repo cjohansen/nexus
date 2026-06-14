@@ -1,6 +1,6 @@
-(ns batch-test
+(ns nexus.batching-test
   (:require [clojure.test :refer [deftest is testing]]
-            [nexus.batch :as batch]
+            [nexus.batching :as batching]
             [nexus.core :as nexus]))
 
 (def test-nexus
@@ -15,7 +15,7 @@
 
 (deftest batch-test
   (testing "Batch processes effects"
-    (is (= (-> (batch/install test-nexus)
+    (is (= (-> (batching/install test-nexus)
                (nexus/dispatch (atom {:existing "Data"}) {}
                    [[:effects/save [:number] 3]
                     [:effects/save [:name] "Nexus"]]))
@@ -42,7 +42,7 @@
                    :effects/alert
                    (fn [_ _ text]
                      (swap! log conj [:effects/alert text]))}}
-                 batch/install
+                 batching/install
                  (nexus/dispatch (atom {}) {}
                      [[:effects/save :a 1]
                       [:effects/transact :A 1]

@@ -1,4 +1,4 @@
-(ns nexus.batch
+(ns nexus.batching
   (:require [nexus.core :as nexus]))
 
 (def conjv (fnil conj []))
