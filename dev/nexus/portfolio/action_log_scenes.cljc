@@ -149,6 +149,7 @@
     {:id #uuid "81425764-6219-43f1-aa61-07110ea16fca"
      :dispatched-at #inst "2025-06-11T08:07:23"
      :dispatch-elapsed (inspector/->timing 12)
+     :dispatched-by {}
      :actions [add-task-action]
      :effects (:expansions add-task-tx)}
 
@@ -157,6 +158,7 @@
      :dispatched-at #inst "2025-06-11T08:09:12"
      :dispatch-elapsed (inspector/->timing 233 {:slow? true})
      :dispatch-data {:number 42}
+     :dispatches [#uuid "2b105ea8-99cc-4d7b-aabf-fc2568c56d0a"]
      :effects (concat
                [{:effect [:state/assoc-in [:transient :syncing "task-id"] true]
                  :effect-elapsed {:ms 1.0 :slow? false}
@@ -196,6 +198,7 @@
                      :dispatched-at #inst "2025-06-11T08:09:12"
                      :actions [[:transient/assoc-in [:syncing "task-id"] true]
                                (:action add-task-action)]}
+     :dispatches [#uuid "81425764-6219-43f1-aa61-07110ea16fca"]
      :dispatched-at #inst "2025-06-11T08:09:13"
      :dispatch-elapsed (inspector/->timing 65)
      :dispatch-data {:number 42}

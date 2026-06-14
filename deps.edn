@@ -5,7 +5,7 @@
         :extra-deps {org.clojure/clojure {:mvn/version "1.12.5"}
                      org.clojure/clojurescript {:mvn/version "1.12.145"}
                      thheller/shadow-cljs {:mvn/version "3.4.11"}
-                     no.cjohansen/dataspex {:mvn/version "2026.06.1"}
+                     no.cjohansen/dataspex {:mvn/version "2026.06.3"}
                      no.cjohansen/lookup {:mvn/version "2026.03.4"}
                      no.cjohansen/portfolio {:mvn/version "2026.03.1"}
                      no.cjohansen/replicant {:mvn/version "2025.03.27"}

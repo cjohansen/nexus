@@ -32,13 +32,18 @@
     ;; I don't suggest anyone do this in a production app 😅
     ;; Somehow we gotta test this stuff!
     :effects/dispatch
-    (fn [{:keys [dispatch]} store]
-      (swap! store assoc :fire! (fn [actions] (dispatch actions))))}
+    (fn [{:keys [dispatch]} store actions]
+      (dispatch actions))}
 
    :nexus/placeholders
    {:secret/number
     (fn [{:keys [num]}]
       num)}})
+
+(defn sequentially [ids]
+  (let [ids! (atom ids)]
+    (fn [& _]
+      (ffirst (swap-vals! ids! next)))))
 
 (defn inspect [nexus initial-state & [action-log-opts]]
   (let [log (action-log/create-log action-log-opts)]
@@ -151,4 +156,81 @@
                 vals
                 first
                 :dispatch-elapsed)
-           {:ms 9.0, :slow? true}))))
+           {:ms 9.0, :slow? true})))
+
+  (testing "Dispatches multiple actions"
+    (is (= (->> (let [now (atom 0)]
+                  (with-redefs [inspector/now (constantly #inst "2026-06-03T08:40")
+                                inspector/now-ms #(float (swap! now inc))
+                                clojure.core/random-uuid (sequentially [#uuid "5efb659e-62b8-48d9-858c-813ebaad947b"
+                                                                        #uuid "3228a005-6ff1-44d4-97c1-71bb7cdb4820"])]
+                    (let [{:keys [log nexus store]} (inspect nexus {:number 5})]
+                      (nexus/dispatch nexus store {:num 42}
+                        [[:actions/inc [:number]]
+                         [:actions/inc [:number]]])
+                      (nexus/dispatch nexus store {:num 42}
+                        [[:actions/inc [:number]]
+                         [:actions/inc [:number]]])
+                      (datafy @log))))
+                :entries
+                vals
+                count)
+           2)))
+
+  (testing "Adds dispatched-by"
+    (is (= (-> (let [now (atom 0)]
+                 (with-redefs [inspector/now (sequentially [#inst "2026-06-03T08:40"
+                                                            #inst "2026-06-03T08:41"])
+                               inspector/now-ms #(float (swap! now inc))
+                               clojure.core/random-uuid (sequentially [#uuid "5efb659e-62b8-48d9-858c-813ebaad947b"
+                                                                       #uuid "3228a005-6ff1-44d4-97c1-71bb7cdb4820"])]
+                   (let [{:keys [log nexus store]} (inspect nexus {:number 5})]
+                     (nexus/dispatch nexus store {:num 42}
+                       [[:actions/inc [:number]]
+                        [:effects/dispatch
+                         [[:actions/inc [:number]]]]])
+                     (datafy @log))))
+               (get-in [:entries #uuid "3228a005-6ff1-44d4-97c1-71bb7cdb4820"])
+               :dispatched-by)
+           {:id #uuid "5efb659e-62b8-48d9-858c-813ebaad947b"
+            :dispatched-at #inst "2026-06-03T08:40:00.000-00:00"
+            :actions [[:actions/inc [:number]]
+                      [:effects/dispatch [[:actions/inc [:number]]]]]})))
+
+  (testing "Marks nested dispatches"
+    (is (= (-> (let [now (atom 0)]
+                 (with-redefs [inspector/now (sequentially [#inst "2026-06-03T08:40"
+                                                            #inst "2026-06-03T08:41"])
+                               inspector/now-ms #(float (swap! now inc))
+                               clojure.core/random-uuid (sequentially [#uuid "5efb659e-62b8-48d9-858c-813ebaad947b"
+                                                                       #uuid "3228a005-6ff1-44d4-97c1-71bb7cdb4820"])]
+                   (let [{:keys [log nexus store]} (inspect nexus {:number 5})]
+                     (nexus/dispatch nexus store {:num 42}
+                       [[:actions/inc [:number]]
+                        [:effects/dispatch
+                         [[:actions/inc [:number]]]]])
+                     (datafy @log))))
+               (get-in [:entries #uuid "5efb659e-62b8-48d9-858c-813ebaad947b"])
+               :dispatches)
+           [#uuid "3228a005-6ff1-44d4-97c1-71bb7cdb4820"])))
+
+  (testing "Adds nested dispatch to originating effect"
+    (is (= (-> (let [now (atom 0)]
+                 (with-redefs [inspector/now (sequentially [#inst "2026-06-03T08:40"
+                                                            #inst "2026-06-03T08:41"])
+                               inspector/now-ms #(float (swap! now inc))
+                               clojure.core/random-uuid (sequentially [#uuid "5efb659e-62b8-48d9-858c-813ebaad947b"
+                                                                       #uuid "3228a005-6ff1-44d4-97c1-71bb7cdb4820"])]
+                   (let [{:keys [log nexus store]} (inspect nexus {:number 5})]
+                     (nexus/dispatch nexus store {:num 42}
+                       [[:actions/inc [:number]]
+                        [:effects/dispatch
+                         [[:actions/inc [:number]]]]])
+                     (datafy @log))))
+               (get-in [:entries #uuid "5efb659e-62b8-48d9-858c-813ebaad947b"])
+               :actions
+               second
+               :dispatches)
+           [{:id #uuid "3228a005-6ff1-44d4-97c1-71bb7cdb4820"
+             :dispatched-at #inst "2026-06-03T08:41:00.000-00:00"
+             :actions [[:actions/inc [:number]]]}]))))

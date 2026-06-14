@@ -1,5 +1,6 @@
 (ns nexus.inspector
   (:require [clojure.core.protocols :as p]
+            [clojure.string :as str]
             [dataspex.data :as data]
             [dataspex.hiccup :as hiccup]
             [dataspex.icons :as-alias icons]
@@ -255,7 +256,7 @@
      (first (filter (comp #{id} :id) log)))))
 
 (defn get-dispatch-entries [{:keys [dispatched-at dispatched-by dispatch-data dom-event
-                                  actions effects error errors dispatch-elapsed]}]
+                                    actions effects error errors dispatch-elapsed]}]
   (concat
    [{:label (hiccup/string-label "Dispatched at")
      :k :dispatched-at
@@ -326,18 +327,22 @@
   (datafy [_]
     dispatch))
 
-(defn render-inline-dispatch [{:keys [dispatched-at dispatch-elapsed errors]}]
+(defn render-inline-dispatch [{:keys [dispatched-at dispatch-elapsed errors]} level]
   [::ui/info
+   (when (< 1 level)
+     (str/join (repeat (dec level) " ")))
+   (when (< 0 level)
+     [::icons/arrow-bend-down-right])
    [::ui/code (time/hh:mm:ss dispatched-at)]
    (when (:slow? dispatch-elapsed)
      [::icons/clock {:style {:color "var(--error-fg)"}}])
    (when (seq errors)
      [::icons/warning {:style {:color "var(--error-fg)"}}])])
 
-(defrecord DispatchLabel [dispatch]
+(defrecord DispatchLabel [dispatch level]
   dp/IRenderInline
   (render-inline [_ _]
-    (render-inline-dispatch dispatch)))
+    (render-inline-dispatch dispatch level)))
 
 (defrecord DispatchKey [id dispatched-at]
   dp/IRenderInline
@@ -351,15 +356,20 @@
 (defn ->dispatch-key [dispatch]
   (->DispatchKey (:id dispatch) (:dispatched-at dispatch)))
 
+(defn render-dispatch [dispatch entries level]
+  (let [k (->dispatch-key dispatch)]
+    (cons {:label (->DispatchLabel dispatch level)
+           :k k
+           :v (->Actions (mapv :action (:actions dispatch)))}
+          (->> (:dispatches dispatch)
+               (map entries)
+               (mapcat #(render-dispatch % entries (inc level)))))))
+
 (defn get-action-log [{:keys [entries chronology]}]
   (->> chronology
-       (map
-        (fn [id]
-          (let [dispatch (get entries id)
-                k (->dispatch-key dispatch)]
-            {:label (->DispatchLabel dispatch)
-             :k k
-             :v (->Actions (mapv :action (:actions dispatch)))})))))
+       (map entries)
+       (remove :dispatched-by)
+       (mapcat #(render-dispatch % entries 0))))
 
 (deftype LogInspector [log]
   dp/IRenderDictionary
@@ -407,23 +417,33 @@
 
 (def conjv (fnil conj []))
 
+(defn get-dispatch-stub [log id]
+  (let [dispatch (get-in @log [:entries id])]
+    (assoc (select-keys dispatch [:id :dispatched-at])
+           :actions (mapv (fn [{:keys [action effect]}]
+                            (or action effect)) (:actions dispatch)))))
+
 (defn before-dispatch [log {:keys [dispatch-data] :as ctx}]
   (let [id (random-uuid)
         event (find-event dispatch-data)
         ms (now-ms)]
     (swap! log
-           #(-> (assoc-in % [:entries id]
-                          (cond-> {:id id
-                                   :dispatched-at (now)
-                                   :actions []
-                                   :dispatch-data dispatch-data}
-                            event (assoc :dom-event event)))
-                (update :chronology conj id)))
+           #(cond-> (assoc-in % [:entries id]
+                              (cond-> {:id id
+                                       :dispatched-at (now)
+                                       :actions []
+                                       :dispatch-data dispatch-data}
+                                event (assoc :dom-event event)
+                                (::id ctx) (assoc :dispatched-by (get-dispatch-stub log (::id ctx)))))
+              (::id ctx) (update-in [:entries (::id ctx) :dispatches] conjv id)
+              :then (update :chronology conj id)))
     (assoc ctx
            ::id id
            ::dispatch-start ms
            ::path [:actions]
-           ::before-interpolate ms)))
+           ::before-interpolate ms
+           ::parent-path (when (::id ctx)
+                           (concat [:entries (::id ctx)] (::path ctx) [:dispatches])))))
 
 (defn after-dispatch [log ctx]
   (update-log-entry log ctx
@@ -432,6 +452,8 @@
                      (measure-elapsed @log (now-ms) (::dispatch-start ctx)))
         (:errors ctx)
         (assoc :errors (:errors ctx)))))
+  (when-let [path (::parent-path ctx)]
+    (swap! log update-in path conjv (get-dispatch-stub log (::id ctx))))
   ctx)
 
 (defn before-action [log ctx]
