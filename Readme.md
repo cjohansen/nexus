@@ -657,6 +657,21 @@ Nexus' custom action panel like so:
   <img src="doc/action-details.png" alt="Details about one dispatched action"  width="48%">
 </div>
 
+<a id="create-log"></a>
+### `(nexus.action-log/create-log & [opt])`
+
+You can pass some options to this function to customize the log:
+
+- `:slow-threshold` The number of milliseconds used to determine if a dispatch
+  was slow. Defaults to 100.
+- `:max-entries` The maximum number of entries to render. Will hide the oldest
+  dispatches. Setting this to a reasonable number will keep the inspector
+  snappy.
+- `:max-age` A map of `{:seconds :minutes :hours :days}` that determines how old
+  an action should be before it is no longer rendered in the log. For instance,
+  `(action-log/create-log {:max-age {:hours 1}})` will only render actions from
+  the past hour. Can be used in combination with `:max-entries`.
+
 <a id="convenience"></a>
 ## Give me convenience, or give me death
 
@@ -715,8 +730,10 @@ need to coordinate on the `nexus` map. Just add this to your development setup:
 ```clj
 (require '[nexus.action-log :as action-log])
 
-(action-log/inspect)
+(action-log/inspect {:max-age {:hours 3}})
 ```
+
+See [above](#create-log) for details on the optional map passed to `inspect`.
 
 ## Rationale
 
