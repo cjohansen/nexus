@@ -225,7 +225,7 @@
      :dataspex/activity :dataspex.activity/browse
      :dataspex/inspectee "Actions"
      :dataspex/auditable? false
-     :val (inspector/->LogInspector log)}}))
+     :val (inspector/->LogInspector (assoc log :now (inspector/now)))}}))
 
 (defn find-navigate-path [dataspex-entry]
   (->> dataspex-entry
@@ -276,3 +276,92 @@
 
 (defscene action-detail-nested-dispatch
   (navigate-to log [1 8]))
+
+(defscene direct-effect-dispatch
+  (render-panel
+   {:slow-threshold 100
+    :entries
+    {#uuid "5efb659e-62b8-48d9-858c-813ebaad947b"
+     {:id #uuid "5efb659e-62b8-48d9-858c-813ebaad947b"
+      :dispatched-at #inst "2026-06-03T08:40:00.000-00:00"
+      :actions
+      [{:state {:number 0}
+        :effect [:effects/save [:a] 1]
+        :result {:number 0, :a 1}
+        :effect-elapsed {:ms 1.0, :slow? false}}
+       {:state {:number 0, :a 1}
+        :effect [:effects/save [:b] 2]
+        :result {:number 0, :a 1, :b 2}
+        :effect-elapsed {:ms 1.0, :slow? false}}
+       {:state {:number 0, :a 1, :b 2}
+        :effect [:effects/save [:c] 3]
+        :result {:number 0, :a 1, :b 2, :c 3}
+        :effect-elapsed {:ms 1.0, :slow? false}}
+       {:state {:number 0, :a 1, :b 2, :c 3}
+        :effect [:effects/save [:d] 4]
+        :result {:number 0, :a 1, :b 2, :c 3, :d 4}
+        :effect-elapsed {:ms 1.0, :slow? false}}]
+      :dispatch-data nil
+      :effects
+      [{:state {:number 0}
+        :effect [:effects/save [:a] 1]
+        :result {:number 0, :a 1}
+        :effect-elapsed {:ms 1.0, :slow? false}}
+       {:state {:number 0, :a 1}
+        :effect [:effects/save [:b] 2]
+        :result {:number 0, :a 1, :b 2}
+        :effect-elapsed {:ms 1.0, :slow? false}}
+       {:state {:number 0, :a 1, :b 2}
+        :effect [:effects/save [:c] 3]
+        :result {:number 0, :a 1, :b 2, :c 3}
+        :effect-elapsed {:ms 1.0, :slow? false}}
+       {:state {:number 0, :a 1, :b 2, :c 3}
+        :effect [:effects/save [:d] 4]
+        :result {:number 0, :a 1, :b 2, :c 3, :d 4}
+        :effect-elapsed {:ms 1.0, :slow? false}}]
+      :dispatch-elapsed {:ms 9.0, :slow? false}}}
+    :chronology [#uuid "5efb659e-62b8-48d9-858c-813ebaad947b"]
+    :now #inst "2026-06-03T08:42:00.000-00:00"}))
+
+(def batched-dispatch
+  {:entries
+   {#uuid "5efb659e-62b8-48d9-858c-813ebaad947b"
+    {:id #uuid "5efb659e-62b8-48d9-858c-813ebaad947b"
+     :dispatched-at #inst "2026-06-03T08:40:00.000-00:00"
+     :actions [{:state {:number 0}
+                :effects
+                [[:effects/save-batch :a 1]
+                 [:effects/save-batch :b 2]
+                 [:effects/save-batch :c 3]
+                 [:effects/save-batch :d 4]]
+                :result {:number 0
+                         :a 1
+                         :b 2
+                         :c 3
+                         :d 4}
+                :effect-elapsed {:ms 1.0, :slow? false}}]
+     :dispatch-data nil
+     :dispatch-elapsed {:ms 1.0, :slow? false}
+     :effects [{:state {:number 0}
+                :effects
+                [[:effects/save-batch :a 1]
+                 [:effects/save-batch :b 2]
+                 [:effects/save-batch :c 3]
+                 [:effects/save-batch :d 4]]
+                :result {:number 0
+                         :a 1
+                         :b 2
+                         :c 3
+                         :d 4}
+                :effect-elapsed {:ms 1.0, :slow? false}}]}}
+   :chronology [#uuid "5efb659e-62b8-48d9-858c-813ebaad947b"]
+   :now #inst "2026-06-03T08:42:00.000-00:00"})
+
+(defscene batched-dispatch-listing
+  (render-panel batched-dispatch))
+
+(defscene batched-dispatch-detail
+  (navigate-to batched-dispatch [0]))
+
+(defscene batched-dispatch-detail-actions
+  (navigate-to batched-dispatch [0 2]))
