@@ -91,7 +91,11 @@
            :before-action
            (fn [ctx*]
              (let [actions (apply action-f (:state ctx*) (next (:action ctx*)))]
-               (if (not (actions? actions))
+               (cond
+                 (empty? actions)
+                 (reset-ctx-nesting ctx* ctx)
+
+                 (not (actions? actions))
                  (update ctx* :errors conjv
                          {:action action
                           :phase :expand-action
@@ -99,6 +103,8 @@
                           :err (ex-info (str (first action) " should expand to a collection of actions")
                                         {:res actions
                                          :action action})})
+
+                 :else
                  (->> (assoc ctx* :actions actions)
                       (dispatch-actions nexus dispatch!)
                       (reset-ctx-nesting ctx)))))})

@@ -148,6 +148,12 @@
            {:config {:path [:number]}
             :number "it"})))
 
+  (testing "Allows action to expand to nil"
+    (is (= (-> test-nexus
+               (assoc-in [:nexus/actions :actions/test] (constantly nil))
+               (nexus/dispatch (atom {}) {} [[:actions/test "it"]]))
+           {})))
+
   (testing "Returns error when action handler does not return collection of actions"
     (is (= (-> test-nexus
                (assoc-in
