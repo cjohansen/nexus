@@ -117,7 +117,6 @@ If the action is handled by an effect handler, we call it an *effect*.
 Nexus makes no assumptions about what the *system* is—you pass it when
 dispatching actions. In the example above, we use the `my-app` atom.
 
-
 ### Implementing an effect handler
 
 Let's consider a kanban task tracking [example app](https://github.com/cjohansen/replicant-kanban).
@@ -998,6 +997,9 @@ this interceptor.
 - `:errors` (errors from previous action handlers)
 
 ### `:after-action`
+
+`:after-action` is called after an action is expanded, and each resulting
+action/effect has been expanded and executed.
 
 - `:state`
 - `:actions`
