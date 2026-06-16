@@ -37,6 +37,7 @@
            {:errors [{:phase :expand-action
                       :err {:message "Boom!"
                             :data {}}
+                      :trace [[:actions/fail 1]]
                       :action [:actions/fail 1]}]})))
 
   (testing "Aborts on first effect error"
@@ -47,6 +48,7 @@
                     [:effects/fail 3]])
                h/datafy-errors)
            {:errors [{:phase :execute-effect
+                      :trace [[:effects/fail 3]]
                       :effect [:effects/fail 3]
                       :err {:message "Boom!"
                             :data {}}}]}))))
