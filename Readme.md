@@ -1065,6 +1065,13 @@ effects:
 
 You can also register interceptors with `nexus.registry/register-interceptor!`.
 
+## Error callback
+
+You can register a function to receive any error Nexus encounters. The function
+will be called with two arguments: the interceptor `ctx` map, and a map
+describing the error. Register this function as `:nexus/on-error` in your Nexus
+map, or with `(nexus.registry/on-error (fn [ctx error] ,,,))`.
+
 ## Nexus in the wild
 
 **Ring middleware:**

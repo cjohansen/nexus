@@ -15,6 +15,15 @@
        (mapv key)
        set))
 
+(defn log-error [nexus ctx error]
+  (when-let [on-error (:nexus/on-error nexus)]
+    (on-error (dissoc ctx :stack :queue) error)
+    (try
+      (catch #?(:clj Exception :cljs :default) _
+        ;; Well, you had your chance!
+        )))
+  error)
+
 (defn ^{:indent 1 :no-doc true} run-interceptors [ctx interceptors [before after k]]
   (letfn [(invoke [f state phase interceptor]
             (try
@@ -22,11 +31,12 @@
                 (ifn? f) f)
               (catch #?(:clj Exception :cljs :default) e
                 (update state :errors conjv
-                        (into (cond-> {:phase phase
-                                       :err e
-                                       :trace (:trace state)}
-                                k (assoc k (ctx k)))
-                              (select-keys interceptor [:id]))))))]
+                        (->> (select-keys interceptor [:id])
+                             (into (cond-> {:phase phase
+                                            :err e
+                                            :trace (:trace state)}
+                                     k (assoc k (ctx k))))
+                             (log-error (:nexus ctx) ctx))))))]
     (loop [state (cond-> (assoc ctx :queue interceptors :stack ())
                    k (update :trace conjv (ctx k)))]
       (cond
@@ -97,12 +107,13 @@
 
                  (not (actions? actions))
                  (update ctx* :errors conjv
-                         {:action action
-                          :phase :expand-action
-                          :trace (:trace ctx*)
-                          :err (ex-info (str (first action) " should expand to a collection of actions")
-                                        {:res actions
-                                         :action action})})
+                         (->> {:action action
+                               :phase :expand-action
+                               :trace (:trace ctx*)
+                               :err (ex-info (str (first action) " should expand to a collection of actions")
+                                             {:res actions
+                                              :action action})}
+                              (log-error nexus ctx)))
 
                  :else
                  (->> (assoc ctx* :actions actions)
@@ -141,9 +152,10 @@
             (when-let [effect-f (get-in nexus [:nexus/effects action-k])]
               (execute-effect nexus dispatch! ctx effect-f action))
             (update ctx :errors conjv
-                    {:phase :execute-effect
-                     :effect-k action-k
-                     :err (ex-info "No such effect" {:available-effects (keys (:nexus/effects nexus))})}))))
+                    (->> {:phase :execute-effect
+                          :effect-k action-k
+                          :err (ex-info "No such effect" {:available-effects (keys (:nexus/effects nexus))})}
+                         (log-error nexus ctx))))))
        (assoc ctx :state (get-state nexus ctx))
        (:actions ctx))
       (assoc :queue queue :stack stack)))
