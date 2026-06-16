@@ -27,5 +27,8 @@
 (defn get-registry []
   @!registry)
 
+(defn on-error [f]
+  (swap! !registry assoc :nexus/on-error f))
+
 (defn dispatch [system dispatch-data actions]
   (nexus/dispatch (get-registry) system dispatch-data actions))

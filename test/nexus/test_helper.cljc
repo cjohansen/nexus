@@ -33,6 +33,10 @@
       (select-keys [:effects :errors])
       (update :errors datafy-errors*)))
 
+(defn summarize-errors [errors]
+  (mapv (fn [{:keys [phase action effect err]}]
+          [phase (or action effect) (:message (ex->data err))]) errors))
+
 (defn ^{:indent 2} with-interceptor [nexus phase f & [id]]
   (update nexus :nexus/interceptors (fnil conj []) (cond-> {phase f}
                                                      id (assoc :id id))))

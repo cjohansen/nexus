@@ -665,6 +665,83 @@
              :action-id "action-1"
              :effect-id "effect-1"}]))))
 
+(deftest nexus-on-error
+  (testing "Catches error from misbehaving action handler"
+    (is (= (let [errors (atom [])]
+             (-> test-nexus
+                 (assoc-in
+                  [:nexus/actions :actions/test]
+                  (fn [{:keys [config]} arg]
+                    [:actions/store (:n config) arg]))
+                 (assoc :nexus/on-error #(swap! errors conj %2))
+                 (nexus/dispatch (atom {:config {:n 2}}) {} [[:actions/test "it"]]))
+             (h/datafy-errors* @errors))
+           [{:action [:actions/test "it"]
+             :trace [[:actions/test "it"]]
+             :phase :expand-action
+             :err {:message ":actions/test should expand to a collection of actions"
+                   :data {:res [:actions/store 2 "it"]
+                          :action [:actions/test "it"]}}}])))
+
+  (testing "Catches error from bad action handler"
+    (is (= (let [errors (atom [])]
+             (-> test-nexus
+                 (assoc-in [:nexus/actions :actions/inc]
+                           (fn [_ _]
+                             (throw (ex-info "Boom!" {}))))
+                 (assoc :nexus/on-error #(swap! errors conj %2))
+                 (nexus/dispatch (atom {}) {} [[:actions/inc 2]]))
+             (h/datafy-errors* @errors))
+           [{:phase :expand-action
+             :action [:actions/inc 2]
+             :trace [[:actions/inc 2]]
+             :err {:message "Boom!"
+                   :data {}}}])))
+
+  (testing "Catches error from unknown action/effect"
+    (is (= (let [errors (atom [])]
+             (-> test-nexus
+                 (assoc :nexus/on-error #(swap! errors conj %2))
+                 (nexus/dispatch (atom {}) {:value 5} [[:effects/no-such-thing]])
+                 h/datafy-errors)
+             (h/datafy-errors* @errors))
+           [{:phase :execute-effect
+             :effect-k :effects/no-such-thing
+             :err {:message "No such effect"
+                   :data {:available-effects [:effects/save]}}}])))
+
+  (testing "Catches error from before-action interceptor"
+    (is (= (let [errors (atom [])]
+             (-> (h/with-interceptor test-nexus :before-action
+                   (fn [ctx]
+                     (throw (ex-info "Boom!" {:ctx ctx}))))
+                 (assoc :nexus/on-error #(swap! errors conj %2))
+                 (nexus/dispatch (atom {}) {} [[:actions/plus [:number] 2]]))
+             (h/summarize-errors @errors))
+           [[:before-action [:actions/plus [:number] 2] "Boom!"]])))
+
+  (testing "Catches error from after-action interceptor"
+    (is (= (let [errors (atom [])]
+             (-> (h/with-interceptor test-nexus :after-action
+                   (fn [ctx]
+                     (throw (ex-info "Boom!" {:ctx ctx}))))
+                 (assoc :nexus/on-error #(swap! errors conj %2))
+                 (nexus/dispatch (atom {}) {} [[:actions/plus [:number] 2]]))
+             (h/summarize-errors @errors))
+           [[:after-action [:actions/plus [:number] 2] "Boom!"]])))
+
+  (testing "Catches error from effect handler"
+    (is (= (let [errors (atom [])]
+             (-> {:nexus/system->state deref
+                  :nexus/effects
+                  {:effects/fail
+                   (fn [_ _]
+                     (throw (ex-info "Boom!" {})))}}
+                 (assoc :nexus/on-error #(swap! errors conj %2))
+                 (nexus/dispatch (atom nil) {} [[:effects/fail]]))
+             (h/summarize-errors @errors))
+           [[:execute-effect [:effects/fail] "Boom!"]]))))
+
 (deftest system+dispatch-data->state-test
   (testing "Uses :nexus/system+dispatch-data->state to grab state snapshot"
     (is (= (let [state (atom nil)]
