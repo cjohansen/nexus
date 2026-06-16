@@ -1,10 +1,10 @@
 (ns nexus.strategies)
 
-(defn abort-on-first-error [k ctx]
+(defn abort-on-first-error [ctx]
   (if (:errors ctx)
     (dissoc ctx :queue :stack :actions :effect :effects)
     ctx))
 
 (def fail-fast
-  {:after-action #(abort-on-first-error :after-action %)
-   :before-effect #(abort-on-first-error :before-effect %)})
+  {:before-action abort-on-first-error
+   :before-effect abort-on-first-error})
