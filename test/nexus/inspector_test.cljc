@@ -19,7 +19,10 @@
         (fn [state path n]
           (let [curr (get-in state path 0)]
             [[:effects/save path (+ curr n)]
-             [:effects/save [:old path] curr]]))}
+             [:effects/save [:old path] curr]]))
+
+        :actions/noop
+        (fn [_state])}
 
        :nexus/effects
        {:effects/save
@@ -307,4 +310,17 @@
                         :b 2
                         :c 3
                         :d 4}
-               :effect-elapsed {:ms 1.0, :slow? false}}]}]))))
+               :effect-elapsed {:ms 1.0, :slow? false}}]}])))
+
+  (testing "Tolerates noop actions"
+    (is (= (-> [[:actions/noop]]
+               (dispatch-actions {:number 2} {:num 42})
+               (select-keys [:chronology :entries])
+               :entries
+               vals
+               first
+               (select-keys [:actions :effects]))
+           {:actions
+            [{:action [:actions/noop]
+              :state {:number 2}
+              :expansion-elapsed {:ms 1.0, :slow? false}}]}))))
