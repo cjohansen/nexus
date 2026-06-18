@@ -27,7 +27,7 @@
                 (conj (get-render-interceptor log opt))
                 (conj (inspector/get-interceptor log))))))
 
-(defn ^{:deprecated "2026.06.1"} install-inspector [_log & [_opt]]
+(defn install-inspector [_log & [_opt]]
   )
 
 (defn ^:export inspect
