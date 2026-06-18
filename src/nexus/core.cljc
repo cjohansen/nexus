@@ -9,12 +9,6 @@
 (defn actions? [data]
   (and (sequential? data) (every? action? data)))
 
-(defn ^:no-doc get-batched-effects [nexus]
-  (->> (:nexus/effects nexus)
-       (filter (comp :nexus/batch meta val))
-       (mapv key)
-       set))
-
 (defn log-error [nexus ctx error]
   (when-let [on-error (:nexus/on-error nexus)]
     (on-error (dissoc ctx :stack :queue) error)
@@ -96,7 +90,7 @@
 
 (defn ^:nodoc dispatch-action [nexus dispatch! ctx action-f action]
   (run-interceptors (assoc ctx :action action)
-    (conj (vec (:nexus/interceptors nexus))
+    (conj (:nexus/interceptors nexus)
           {:phase :expand-action
            :before-action
            (fn [ctx*]
@@ -129,10 +123,9 @@
                   (select-keys [:results :errors]))))))
 
 (defn execute-effect [nexus dispatch! ctx effect-f effect]
-  (-> (assoc ctx :dispatch dispatch!)
-      (assoc :effect effect :dispatch dispatch!)
+  (-> (assoc ctx :dispatch dispatch! :effect effect)
       (run-interceptors
-          (conj (vec (:nexus/interceptors nexus))
+          (conj (:nexus/interceptors nexus)
                 {:phase :execute-effect
                  :before-effect
                  (fn [{:keys [system effect] :as ctx*}]
@@ -165,7 +158,8 @@
     (assert (or (ifn? (:nexus/system->state nexus))
                 (ifn? (:nexus/system+dispatch-data->state nexus)))
             "Either :nexus/system+dispatch-data->state or :nexus/system->state must be a function"))
-  (let [dispatch!
+  (let [nexus (update nexus :nexus/interceptors vec)
+        dispatch!
         (fn dispatch! [actions & [disp-data parent-ctx]]
           (let [handler {:phase :action-dispatch
                          :before-dispatch (partial dispatch-actions nexus dispatch!)}]
@@ -174,6 +168,6 @@
                                      :system system
                                      :dispatch-data (merge dispatch-data disp-data)
                                      :actions actions)
-              (conj (vec (:nexus/interceptors nexus)) handler)
+              (conj (:nexus/interceptors nexus) handler)
               [:before-dispatch :after-dispatch])))]
     (dissoc (dispatch! actions) :nexus :system :state :trace :queue :stack :dispatch :dispatch-data :action :actions)))

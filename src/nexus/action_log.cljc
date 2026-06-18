@@ -27,10 +27,8 @@
                 (conj (get-render-interceptor log opt))
                 (conj (inspector/get-interceptor log))))))
 
-(defn install-inspector
-  "This function used to have a job, but it no longer serves a purpose. It's here
-  for backwards compatibility, but there's really no need to call it."
-  [_log & [_opt]])
+(defn install-inspector [_log & [_opt]]
+  )
 
 (defn ^:export inspect
   {:arglists '[[]
