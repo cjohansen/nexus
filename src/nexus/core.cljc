@@ -103,7 +103,7 @@
              (let [actions (apply action-f (:state ctx*) (next (:action ctx*)))]
                (cond
                  (empty? actions)
-                 (reset-ctx-nesting ctx* ctx)
+                 (reset-ctx-nesting ctx (assoc ctx* :actions []))
 
                  (not (actions? actions))
                  (update ctx* :errors conjv
