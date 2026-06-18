@@ -154,6 +154,22 @@
                (nexus/dispatch (atom {}) {} [[:actions/test "it"]]))
            {})))
 
+  (testing "Preserves before-action context when action expands to nil"
+    (is (= (let [log (atom [])]
+             (-> test-nexus
+                 (assoc-in [:nexus/actions :actions/test] (constantly nil))
+                 (h/with-interceptor :before-action
+                   #(assoc % ::before-action-ran? true))
+                 (h/with-interceptor :after-action
+                   (fn [context]
+                     (swap! log conj (select-keys context [:action :actions ::before-action-ran?]))
+                     context))
+                 (nexus/dispatch (atom {}) {} [[:actions/test "it"]]))
+             @log)
+           [{:action [:actions/test "it"]
+             :actions []
+             ::before-action-ran? true}])))
+
   (testing "Returns error when action handler does not return collection of actions"
     (is (= (-> test-nexus
                (assoc-in
