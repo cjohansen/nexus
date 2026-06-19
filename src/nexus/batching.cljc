@@ -39,14 +39,14 @@
                      (:system ctx)
                      (mapv next (:effects ctx)))))
 
-(defn before-effect [ctx]
+(defn ^:no-doc before-effect [ctx]
   (let [[effect-k] (:effect ctx)]
     (if (-> ctx :nexus :nexus/effects effect-k meta :nexus/batch)
       (-> (dissoc ctx :queue :stack)
           (update ::batched conjv (:effect ctx)))
       ctx)))
 
-(defn after-dispatch [ctx]
+(defn ^:no-doc after-dispatch [ctx]
   (reduce
    (fn [ctx batch]
      (merge ctx (-> (execute-batch ctx (ffirst batch) batch :effects wrap-batched-effect-handler)
@@ -59,8 +59,8 @@
    :before-effect #'before-effect
    :after-dispatch #'after-dispatch})
 
-(defn install [nexus]
+(defn ^:export install [nexus]
   (update nexus :nexus/interceptors (fnil conj []) interceptor))
 
-(defn install! []
+(defn ^:export install! []
   (nxr/register-interceptor! interceptor))
