@@ -1099,10 +1099,10 @@ and [Teodor Heggelund](https://play.teod.eu/)
 Change execution model to eagerly execute commands, see [relevant
 ADR](/doc/adr01-instantly-process-effects.md).
 
+Thanks [Cormac Cannon](https://github.com/cormacc)!
+
 Deprecate batching, and move it to an opt-in interceptor. See section on
 batching above.
-
-Thanks [Cormac Cannon](https://github.com/cormacc)!
 
 Remove the error propagation for synchronous nested calls do `dispatch`
 introduced in 2025.11.1. This change duplicated errors in interceptors, and does
@@ -1115,6 +1115,11 @@ dots" when errors occur.
 
 Add `:nexus/system+dispatch-data->state` as an alternative to
 `:nexus/system->state`.
+
+Add `^:nexus/skip-interpolation` to skip interpolation of large data structures
+in action data.
+
+Add `:nexus/on-error` callback to observe every error occurring during dispatch.
 
 ### 2025.11.1
 
