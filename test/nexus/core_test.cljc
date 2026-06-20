@@ -27,13 +27,16 @@
   (testing "Detects action"
     (is (false? (nexus/action? :action)))
     (is (true? (nexus/action? [:action])))
-    (is (false? (nexus/action? ["action"])))))
+    ;; In squint keywords are strings, so ["action"] is indistinguishable from [:action]
+    #?(:squint (is (true? (nexus/action? ["action"])))
+       :default (is (false? (nexus/action? ["action"]))))))
 
 (deftest actions?-test
   (testing "Detects actions"
     (is (false? (nexus/actions? :action)))
     (is (false? (nexus/actions? [:action])))
-    (is (false? (nexus/actions? [["action"]])))
+    #?(:squint (is (true? (nexus/actions? [["action"]])))
+       :default (is (false? (nexus/actions? [["action"]]))))
     (is (true? (nexus/actions? [[:action]])))
     (is (true? (nexus/actions? [[:actions/doit "Now!"]])))
     (is (true? (nexus/actions? [[:actions/doit "Now!"]
@@ -182,7 +185,9 @@
             [{:action [:actions/test "it"]
               :trace [[:actions/test "it"]]
               :phase :expand-action
-              :err {:message ":actions/test should expand to a collection of actions"
+              ;; squint keywords are strings, so (str :actions/test) has no leading colon
+              :err {:message #?(:squint "actions/test should expand to a collection of actions"
+                                :default ":actions/test should expand to a collection of actions")
                     :data {:res [:actions/store 2 "it"]
                            :action [:actions/test "it"]}}}]})))
 
@@ -508,7 +513,7 @@
                  (assoc
                   :nexus/placeholders {:dd/k (fn [dispatch-data k]
                                                (if (contains? dispatch-data k)
-                                                 (k dispatch-data)
+                                                 (get dispatch-data k)
                                                  [:dd/k k]))}
                   :nexus/interceptors [(h/log-interceptor log 1)]
                   :nexus/effects
@@ -695,7 +700,9 @@
            [{:action [:actions/test "it"]
              :trace [[:actions/test "it"]]
              :phase :expand-action
-             :err {:message ":actions/test should expand to a collection of actions"
+             ;; squint keywords are strings, so (str :actions/test) has no leading colon
+             :err {:message #?(:squint "actions/test should expand to a collection of actions"
+                               :default ":actions/test should expand to a collection of actions")
                    :data {:res [:actions/store 2 "it"]
                           :action [:actions/test "it"]}}}])))
 
