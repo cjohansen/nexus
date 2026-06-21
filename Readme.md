@@ -525,7 +525,7 @@ one-liner:
 (def nexus ,,,)
 (def store (atom {}))
 
-(defn start [el neus store]
+(defn start [el nexus store]
   ;; Dispatch Replicant's event data with Nexus
   (r/set-dispatch! #(nexus/dispatch nexus store %1 %2))
   (add-watch store ::render #(r/render el %4))
