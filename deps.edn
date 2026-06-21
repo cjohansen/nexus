@@ -11,7 +11,7 @@
                      no.cjohansen/replicant {:mvn/version "2025.03.27"}
                      kaocha-noyoda/kaocha-noyoda {:mvn/version "2019-06-03"}
                      lambdaisland/kaocha {:mvn/version "1.91.1392"}
-                     com.lambdaisland/kaocha-cljs {:mvn/version "1.5.154"}}
+                     com.lambdaisland/kaocha-cljs {:mvn/version "1.9.181"}}
         :jvm-opts ["-XX:-OmitStackTraceInFastThrow" "-Djdk.attach.allowAttachSelf=true"]}
   :test {:exec-fn kaocha.runner/exec-fn
          :exec-args {}}
