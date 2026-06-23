@@ -1,0 +1,14 @@
+{:paths ["src" "test"]
+ :tasks
+ {test:bb
+  {:doc "Run tests under babashka"
+   :requires ([clojure.test :as t]
+              [nexus.core-test]
+              [nexus.strategies-test])
+   :task (let [{:keys [fail error]} (t/run-tests 'nexus.core-test 'nexus.strategies-test)]
+           (System/exit (+ fail error)))}
+
+  test:squint
+  {:doc "Run tests under squint"
+   :task (do (shell "npm install")
+             (shell "npm test"))}}}

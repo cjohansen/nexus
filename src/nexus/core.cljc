@@ -29,21 +29,21 @@
                              (into (cond-> {:phase phase
                                             :err e
                                             :trace (:trace state)}
-                                     k (assoc k (ctx k))))
+                                     k (assoc k (get ctx k))))
                              (log-error (:nexus ctx) ctx))))))]
     (loop [state (cond-> (assoc ctx :queue interceptors :stack ())
-                   k (update :trace conjv (ctx k)))]
+                   k (update :trace conjv (get ctx k)))]
       (cond
         (:queue state)
         (let [interceptor (first (:queue state))
               state (-> (update state :queue next)
                         (update :stack conj interceptor))]
-          (recur (invoke (before interceptor) state (or (:phase interceptor) before) interceptor)))
+          (recur (invoke (get interceptor before) state (or (:phase interceptor) before) interceptor)))
 
         (:stack state)
         (let [interceptor (first (:stack state))
               state (update state :stack next)]
-          (recur (invoke (after interceptor) state after interceptor)))
+          (recur (invoke (get interceptor after) state after interceptor)))
 
         :else state))))
 
