@@ -9,4 +9,5 @@
 /node_modules/
 /package-lock.json
 /out/
+/cljs-test-runner-out/
 /nexus.jar

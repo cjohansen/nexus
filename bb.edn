@@ -8,6 +8,10 @@
    :task (let [{:keys [fail error]} (t/run-tests 'nexus.core-test 'nexus.strategies-test)]
            (System/exit (+ fail error)))}
 
+  test:cljs
+  {:doc "Run tests under ClojureScript with advanced compilation"
+   :task (shell "clojure -M:dev:test-cljs")}
+
   test:squint
   {:doc "Run tests under squint"
    :task (do (shell "npm install")

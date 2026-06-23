@@ -184,7 +184,7 @@
             [{:action [:actions/test "it"]
               :trace [[:actions/test "it"]]
               :phase :expand-action
-              :err {:message #?(:squint nil ;; squint keyword = string difference
+              :err {:message #?(:squint "actions/test should expand to a collection of actions" ;; squint keyword prints without colon
                                 :default ":actions/test should expand to a collection of actions")
                     :data {:res [:actions/store 2 "it"]
                            :action [:actions/test "it"]}}}]})))

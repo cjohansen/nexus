@@ -1,14 +1,10 @@
 {
   "name": "@cjohansen/nexus",
-  "type": "module",
   "private": true,
   "scripts": {
     "test": "squint compile && node out/nexus/run_tests.mjs"
   },
   "devDependencies": {
     "squint-cljs": "0.13.195"
-  },
-  "dependencies": {
-    "ws": "^8.21.0"
   }
 }
