@@ -10,11 +10,17 @@
                      no.cjohansen/portfolio {:mvn/version "2026.03.1"}
                      no.cjohansen/replicant {:mvn/version "2025.03.27"}
                      kaocha-noyoda/kaocha-noyoda {:mvn/version "2019-06-03"}
-                     lambdaisland/kaocha {:mvn/version "1.91.1392"}
-                     com.lambdaisland/kaocha-cljs {:mvn/version "1.9.181"}}
+                     lambdaisland/kaocha {:mvn/version "1.91.1392"}}
         :jvm-opts ["-XX:-OmitStackTraceInFastThrow" "-Djdk.attach.allowAttachSelf=true"]}
   :test {:exec-fn kaocha.runner/exec-fn
          :exec-args {}}
+  :test-cljs
+  {:extra-paths ["test"]
+   :extra-deps {org.clojure/clojurescript {:mvn/version "1.12.145"}
+                olical/cljs-test-runner {:mvn/version "3.8.1"}}
+   :main-opts ["-m" "cljs-test-runner.main"
+               "-c" "{:optimizations :advanced}"
+               "-x" "node"]}
   :jar
   {:extra-deps {pack/pack.alpha {:git/url "https://github.com/juxt/pack.alpha.git"
                                  :sha "e518d9b2b70f4292c9988d2792b8667d88a6f4df"}}
