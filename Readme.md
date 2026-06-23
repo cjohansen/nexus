@@ -1104,7 +1104,7 @@ Thanks [Cormac Cannon](https://github.com/cormacc)!
 Deprecate batching, and move it to an opt-in interceptor. See section on
 batching above.
 
-Remove the error propagation for synchronous nested calls do `dispatch`
+Remove the error propagation for synchronous nested calls to `dispatch`
 introduced in 2025.11.1. This change duplicated errors in interceptors, and does
 not work consistently for async and sync calls to dispatch.
 
