@@ -6,8 +6,7 @@
 (defn action? [data]
   ;; In squint keywords are strings, so an action's head is a string there.
   (and (vector? data)
-       #?(:squint (string? (first data))
-          :default (keyword? (first data)))))
+       (keyword? (first data))))
 
 (defn actions? [data]
   (and (sequential? data) (every? action? data)))
