@@ -6,7 +6,7 @@ on:
       - "dev/**"
       - "dev-resources/**"
     branches:
-      - instant-execute
+      - main
   pull_request:
     paths-ignore:
       - "dev/**"
