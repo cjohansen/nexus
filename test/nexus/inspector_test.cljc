@@ -26,13 +26,13 @@
 
        :nexus/effects
        {:effects/save
-        (fn [_ store k v]
-          (swap! store assoc-in k v))
+        (fn [_ system k v]
+          (swap! system assoc-in k v))
 
         :effects/save-batch
         ^:nexus/batch
-        (fn [_ store kvs]
-          (swap! store #(reduce (fn [s [k v]] (assoc s k v)) % kvs)))
+        (fn [_ system kvs]
+          (swap! system #(reduce (fn [s [k v]] (assoc s k v)) % kvs)))
 
         ;; I don't suggest anyone do this in a production app 😅
         ;; Somehow we gotta test this stuff!
@@ -55,7 +55,7 @@
   (let [log (action-log/create-log action-log-opts)]
     {:nexus (action-log/install-logger nexus log)
      :log log
-     :store (atom (or initial-state {}))}))
+     :system (atom (or initial-state {}))}))
 
 (defn datafy [data]
   (walk/postwalk
@@ -108,7 +108,7 @@
         now (atom #inst "2026-06-03T08:39")
         get-now #(swap! now tick)
         make-random-uuid (sequentially ids)
-        {:keys [log nexus store]} (inspect nexus initial-state opt)]
+        {:keys [log nexus system]} (inspect nexus initial-state opt)]
     (fn dispatch
       ([actions]
        (dispatch nil actions))
@@ -116,7 +116,7 @@
        (with-redefs [inspector/now get-now
                      inspector/now-ms #(float (swap! now-ms inc))
                      clojure.core/random-uuid make-random-uuid]
-         (nexus/dispatch nexus store dispatch-data actions)
+         (nexus/dispatch nexus system dispatch-data actions)
          (assoc (datafy @log) :now (get-now)))))))
 
 (defn dispatch-actions

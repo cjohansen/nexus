@@ -24,8 +24,8 @@ Given the following Nexus system:
 (require '[nexus.registry :as nxr])
 
 (nxr/register-effect! :effects/save
-  (fn [_ store path value]
-    (swap! store assoc-in path value)))
+  (fn [_ system path value]
+    (swap! system assoc-in path value)))
 
 (nxr/register-action! :actions/inc
   (fn [state path]
@@ -34,26 +34,26 @@ Given the following Nexus system:
 (nxr/register-system->state! deref)
 ```
 
-This will work as intended (e.g. the `:number` key in the `store` atom will be
+This will work as intended (e.g. the `:number` key in the `system` atom will be
 increased by one):
 
 ```clj
-(def store (atom {:number 0}))
-(nxr/dispatch store {} [[:actions/inc [:number]]])
+(def system (atom {:number 0}))
+(nxr/dispatch system {} [[:actions/inc [:number]]])
 
-@store ;;=> {:number 1}
+@system ;;=> {:number 1}
 ```
 
 This will not work as intended. Both action expansions see the current state,
 and perform the same increment.
 
 ```clj
-(def store (atom {:number 0}))
+(def system (atom {:number 0}))
 
-(nxr/dispatch store {} [[:actions/inc [:number]]
+(nxr/dispatch system {} [[:actions/inc [:number]]
                         [:actions/inc [:number]]])
 
-@store ;;=> {:number 1}
+@system ;;=> {:number 1}
 ```
 
 During initial design and implementation, care was taken to make it possible for
@@ -91,12 +91,12 @@ same dispatch received the same pre-dispatch state. In other words, the
 motivating example will behave differently now:
 
 ```clj
-(def store (atom {:number 0}))
+(def system (atom {:number 0}))
 
-(nxr/dispatch store {} [[:actions/inc [:number]]
+(nxr/dispatch system {} [[:actions/inc [:number]]
                         [:actions/inc [:number]]])
 
-@store ;;=> {:number 2} (Previously {:number 1})
+@system ;;=> {:number 2} (Previously {:number 1})
 ```
 
 ### Cons
