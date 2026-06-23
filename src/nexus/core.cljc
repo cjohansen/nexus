@@ -27,8 +27,6 @@
                 (ifn? f) f)
               (catch #?(:clj Exception :cljs :default) e
                 (update state :errors conjv
-                        ;; `(get ctx k)` rather than `(ctx k)`: in squint a map
-                        ;; is a JS object and not callable as a function.
                         (->> (select-keys interceptor [:id])
                              (into (cond-> {:phase phase
                                             :err e
