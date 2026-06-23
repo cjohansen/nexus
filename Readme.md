@@ -11,7 +11,7 @@ Nexus is a small, zero-dependency library for dispatching **actions** — data
 describing what should happen — with mostly pure functions.
 
 ```clj
-no.cjohansen/nexus {:mvn/version "2026.06.1"}
+no.cjohansen/nexus {:mvn/version "2026.06.2"}
 ```
 
 [Replicant](https://replicant.fun) provides a data-driven and functional
@@ -1094,7 +1094,7 @@ and [Teodor Heggelund](https://play.teod.eu/)
 
 ## Changelog
 
-### 2026.06.1
+### 2026.06.2
 
 Change execution model to eagerly execute commands, see [relevant
 ADR](/doc/adr01-instantly-process-effects.md).
