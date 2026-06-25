@@ -11,8 +11,8 @@
 
 (defn log-error [nexus ctx error]
   (when-let [on-error (:nexus/on-error nexus)]
-    (on-error (dissoc ctx :stack :queue) error)
     (try
+      (on-error (dissoc ctx :stack :queue) error)
       (catch #?(:clj Exception :cljs :default) _
         ;; Well, you had your chance!
         )))
