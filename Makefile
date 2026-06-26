@@ -2,13 +2,13 @@ VERSION := $(shell sed 's/xmlns="[^"]*"//g' pom.xml | xmllint --xpath 'string(/p
 
 .PHONY: clean
 clean:
-	rm -fr target dev-resources/public/app dev-resources/public/portfolio
+	rm -fr target dev-resources/public/app dev-resources/public/portfolio nexus.jar
 
 nexus.jar: $(wildcard src/nexus/*.clj*)
 	clojure -M:jar
 
 .PHONY: deploy
-deploy: nexus.jar
+deploy: clean nexus.jar
 	env CLOJARS_USERNAME=$$(xmllint --xpath "string(/settings/servers/server[id='clojars']/username)" ~/.m2/settings.xml) \
 	    CLOJARS_PASSWORD=$$(xmllint --xpath "string(/settings/servers/server[id='clojars']/password)" ~/.m2/settings.xml) \
 	    clojure -X:deploy
@@ -16,3 +16,13 @@ deploy: nexus.jar
 .PHONY: shadow
 shadow:
 	npx shadow-cljs watch portfolio sample
+
+node_modules:
+	npm install
+
+.PHONY: test
+test: node_modules
+	bin/kaocha
+	bb test:cljs
+	bb test:bb
+	bb test:squint
