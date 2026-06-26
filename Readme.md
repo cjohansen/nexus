@@ -11,7 +11,7 @@ Nexus is a small, zero-dependency library for dispatching **actions** — data
 describing what should happen — with mostly pure functions.
 
 ```clj
-no.cjohansen/nexus {:mvn/version "2026.06.2"}
+no.cjohansen/nexus {:mvn/version "2026.06.3"}
 ```
 
 [Replicant](https://replicant.fun) provides a data-driven and functional
@@ -1093,6 +1093,14 @@ and [Teodor Heggelund](https://play.teod.eu/)
 ([@teodorlu](https://github.com/teodorlu)).
 
 ## Changelog
+
+### 2026.06.3
+
+Add support for using with [squint](https://github.com/squint-cljs/squint)
+([Michiel Borkent](https://github.com/borkdude)).
+
+Fix unreachable code warning by nesting try/code/catch properly ([Teodor
+Heggelund](https://github.com/teodorlu)).
 
 ### 2026.06.2
 
