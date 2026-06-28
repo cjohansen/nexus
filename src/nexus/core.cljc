@@ -147,7 +147,7 @@
             (update ctx :errors conjv
                     (->> {:phase :execute-effect
                           :effect-k action-k
-                          :err (ex-info "No such effect" {:available-effects (keys (:nexus/effects nexus))})}
+                          :err (ex-info (str "No such effect " action-k) {:available-effects (keys (:nexus/effects nexus))})}
                          (log-error nexus ctx))))))
        (assoc ctx :state (get-state nexus ctx))
        (:actions ctx))
