@@ -390,7 +390,7 @@
       max-entries (take max-entries)
       since (take-while #(<= since (.getTime (get-in entries [% :dispatched-at])))))))
 
-(defn get-action-log [{:keys [entries chronology] :as opt}]
+(defn get-action-log [{:keys [entries] :as opt}]
   (->> (get-filtered-entries opt)
        (map entries)
        (remove :dispatched-by)
@@ -467,6 +467,7 @@
            ::dispatch-start ms
            ::path [:actions]
            ::before-interpolate ms
+           ::dispatched-actions (:actions ctx)
            ::parent-path (when (::id ctx)
                            (concat [:entries (::id ctx)] (::path ctx) [:dispatches])))))
 
@@ -475,6 +476,12 @@
     (fn [entry]
       (cond-> (assoc entry :dispatch-elapsed
                      (measure-elapsed @log (now-ms) (::dispatch-start ctx)))
+        (and (empty? (:actions entry))
+             (::dispatched-actions ctx)
+             (:errors ctx))
+        (assoc :actions (for [action (::dispatched-actions ctx)]
+                          {:action action}))
+
         (:errors ctx)
         (assoc :errors (:errors ctx)))))
   (when-let [path (::parent-path ctx)]

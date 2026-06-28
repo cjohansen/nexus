@@ -1,10 +1,12 @@
 (ns nexus.inspector-test
   (:require [clojure.test :refer [deftest is testing]]
             [clojure.walk :as walk]
+            [dataspex.hiccup :as hiccup]
+            [lookup.core :as lookup]
             [nexus.action-log :as action-log]
+            [nexus.batching :as batching]
             [nexus.core :as nexus]
-            [nexus.inspector :as inspector]
-            [nexus.batching :as batching])
+            [nexus.inspector :as inspector])
   #?(:clj (:import (java.util Date))))
 
 (def nexus
@@ -323,4 +325,17 @@
            {:actions
             [{:action [:actions/noop]
               :state {:number 2}
-              :expansion-elapsed {:ms 1.0, :slow? false}}]}))))
+              :expansion-elapsed {:ms 1.0, :slow? false}}]})))
+
+  (testing "Dispatches effect directly"
+    (is (= (-> [[:effects/save [:number] 2]]
+               (dispatch-actions {} {})
+               inspector/->LogInspector
+               hiccup/render-dictionary
+               (->> (lookup/select-one [:dataspex.ui/entry :dataspex.ui/source])
+                    lookup/children
+                    first))
+           [:dataspex.ui/vector
+            [:dataspex.ui/keyword :effects/save]
+            [:dataspex.ui/vector [:dataspex.ui/keyword :number]]
+            [:dataspex.ui/number 2]]))))
