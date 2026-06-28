@@ -183,7 +183,9 @@
   (render-inline [_ opt]
     [::ui/info
      [::icons/warning {:style {:color "var(--error-fg)"}}]
-     (hiccup/render-inline (first (or (:effect error) (:action error))) opt)])
+     (hiccup/render-inline (or (first (or (:effect error)
+                                          (:action error)))
+                               (:effect-k error)) opt)])
 
   dp/IKeyLookup
   (lookup [_ _]
