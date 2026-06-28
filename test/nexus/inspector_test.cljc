@@ -338,4 +338,15 @@
            [:dataspex.ui/vector
             [:dataspex.ui/keyword :effects/save]
             [:dataspex.ui/vector [:dataspex.ui/keyword :number]]
-            [:dataspex.ui/number 2]]))))
+            [:dataspex.ui/number 2]])))
+
+  (testing "Prints actions in failed attempt"
+    (is (= (-> [[:actions/non-existent]]
+               (dispatch-actions {} {})
+               inspector/->LogInspector
+               hiccup/render-dictionary
+               (->> (lookup/select-one [:dataspex.ui/entry :dataspex.ui/source])
+                    lookup/children
+                    first))
+           [:dataspex.ui/vector
+            [:dataspex.ui/keyword :actions/non-existent]]))))

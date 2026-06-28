@@ -130,7 +130,7 @@
   (lookup [_ _]
     (->ActionDetail dispatched-action)))
 
-(defn get-error-entries [{:keys [effect err phase trace action]}]
+(defn get-error-entries [{:keys [effect effect-k err phase trace action]}]
   (concat
    (when phase
      [{:label (hiccup/string-label "Phase")
@@ -140,6 +140,10 @@
      [{:label (hiccup/string-label "Effect")
        :k :effect
        :v (->Action effect)}])
+   (when effect-k
+     [{:label (hiccup/string-label "Effect kind")
+       :k :effect-k
+       :v effect-k}])
    (when action
      [{:label (hiccup/string-label "Action")
        :k :action
