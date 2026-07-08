@@ -11,7 +11,7 @@ Nexus is a small, zero-dependency library for dispatching **actions** — data
 describing what should happen — with mostly pure functions.
 
 ```clj
-no.cjohansen/nexus {:mvn/version "2026.06.4"}
+no.cjohansen/nexus {:mvn/version "2026.07.1"}
 ```
 
 [Replicant](https://replicant.fun) provides a data-driven and functional
@@ -203,6 +203,7 @@ system is an atom, `deref` will do the job just fine:
 (def nexus
   {:nexus/system->state deref ;; <==
    :nexus/effects {,,,}
+   :nexus/expansions          ;; <==
    :nexus/actions             ;; <==
    {:task/start-editing
     (fn [state task-id]
@@ -1093,6 +1094,10 @@ and [Teodor Heggelund](https://play.teod.eu/)
 ([@teodorlu](https://github.com/teodorlu)).
 
 ## Changelog
+
+### 2026.07.1
+
+Add nexus.registry/register-system+dispatch-data->state!
 
 ### 2026.06.4
 
