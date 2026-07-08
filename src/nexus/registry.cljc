@@ -6,6 +6,9 @@
 (defn register-system->state! [f]
   (swap! !registry assoc :nexus/system->state f))
 
+(defn register-system+dispatch-data->state! [f]
+  (swap! !registry assoc :nexus/system+dispatch-data->state f))
+
 (defn ^{:indent 1} register-action! [action-k f]
   (swap! !registry assoc-in [:nexus/actions action-k] f))
 
