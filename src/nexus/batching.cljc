@@ -4,7 +4,7 @@
 
 (def conjv (fnil conj []))
 
-(defn ^{:indent 1 :nodoc true} batch-by [f xs]
+(defn ^{:indent 1 :no-doc true} batch-by [f xs]
   (let [[m order]
         (reduce (fn [[m order] x]
                   (let [k (f x)]

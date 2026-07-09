@@ -1,7 +1,7 @@
 (ns nexus.core
   (:require [clojure.walk :as walk]))
 
-(def ^:nodoc conjv (fnil conj []))
+(def ^:no-doc conjv (fnil conj []))
 
 (defn action? [data]
   (and (vector? data) (keyword? (first data))))
@@ -77,18 +77,18 @@
   [nexus dispatch-data actions]
   (mapv #(interpolate-1 nexus dispatch-data %) actions))
 
-(defn ^:nodoc get-state [nexus ctx]
+(defn ^:no-doc get-state [nexus ctx]
   (or (when-let [f (:nexus/system+dispatch-data->state nexus)]
         (f (:system ctx) (:dispatch-data ctx)))
       (when-let [f (:nexus/system->state nexus)]
         (f (:system ctx)))))
 
-(defn ^:nodoc reset-ctx-nesting [{:keys [queue stack trace]} ctx]
+(defn ^:no-doc reset-ctx-nesting [{:keys [queue stack trace]} ctx]
   (assoc ctx :queue queue :stack stack :trace trace))
 
 (declare dispatch-actions)
 
-(defn ^:nodoc dispatch-action [nexus dispatch! ctx action-f action]
+(defn ^:no-doc dispatch-action [nexus dispatch! ctx action-f action]
   (run-interceptors (assoc ctx :action action)
     (conj (:nexus/interceptors nexus)
           {:phase :expand-action
@@ -115,7 +115,7 @@
                       (reset-ctx-nesting ctx)))))})
     [:before-action :after-action :action]))
 
-(defn ^:nodoc ->execute-ctx [ctx]
+(defn ^:no-doc ->execute-ctx [ctx]
   (update ctx :dispatch
           (fn [dispatch]
             (fn [actions & [dispatch-data]]
