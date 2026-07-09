@@ -106,7 +106,7 @@
            {:errors
             [{:phase :execute-effect
               :effect-k :effects/no-such-thing
-              :err {:message "No such effect"
+              :err {:message "No such effect :effects/no-such-thing"
                     :data {:available-effects [:effects/save]}}}]})))
 
   (testing "Executes effect"
@@ -728,7 +728,7 @@
              (h/datafy-errors* @errors))
            [{:phase :execute-effect
              :effect-k :effects/no-such-thing
-             :err {:message "No such effect"
+             :err {:message "No such effect :effects/no-such-thing"
                    :data {:available-effects [:effects/save]}}}])))
 
   (testing "Catches error from before-action interceptor"
