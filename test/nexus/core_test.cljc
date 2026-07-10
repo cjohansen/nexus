@@ -1,5 +1,6 @@
 (ns nexus.core-test
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [clojure.string :as str]
+            [clojure.test :refer [deftest is testing]]
             [nexus.core :as nexus]
             [nexus.test-helper :as h]))
 
@@ -20,8 +21,8 @@
       [[:effects/save path (+ (get-in state path 0) n)]])
 
     :actions/inc
-    (fn [_ path]
-      [[:actions/plus path 1]])}})
+    (fn [state path]
+      [[:actions/plus path (:base-n state 1)]])}})
 
 (deftest action?-test
   (testing "Detects action"
@@ -814,3 +815,87 @@
             [:expand-action [:ax2 [:interpolated/during 3]]]
             [:exec-effect [:fx3]]
             [:exec-effect [:fx4]]]))))
+
+(deftest expand-actions-test
+  (testing "Noops without any expansions"
+    (is (= (->> [[:actions/test :it]]
+                (nexus/expand-actions {} {})
+                :effects)
+           [[:actions/test :it]])))
+
+  (testing "Expands action"
+    (is (= (-> {:nexus/actions
+                {:actions/test
+                 (fn [_ arg]
+                   [[:actions/store (str/upper-case arg)]])}}
+               (nexus/expand-actions {} [[:actions/test "it"]])
+               :effects)
+           [[:actions/store "IT"]])))
+
+  (testing "Passes state to action handler"
+    (is (= (-> {:nexus/actions
+                {:actions/test
+                 (fn [state arg]
+                   [[:actions/store (:n (:config state)) arg]])}}
+               (nexus/expand-actions {:config {:n 2}} [[:actions/test "it"]])
+               :effects)
+           [[:actions/store 2 "it"]])))
+
+  (testing "Returns error when action handler does not return collection of actions"
+    (is (= (-> {:nexus/actions
+                {:actions/test
+                 (fn [{:keys [config]} arg]
+                   [:actions/store (:n config) arg])}}
+               (nexus/expand-actions {:config {:n 2}} [[:actions/test "it"]])
+               h/datafy-errors)
+           {:errors
+            [{:action [:actions/test "it"]
+              :phase :expand-action
+              :err {:message ":actions/test should expand to a collection of actions"
+                    :data {:res [:actions/store 2 "it"]}}}]})))
+
+  (testing "Expands action to empty list of effects"
+    (is (empty? (-> {:nexus/actions
+                     {:actions/test
+                      (fn [_ _] [])}}
+                    (nexus/expand-actions {:config {:n 2}} [[:actions/test "it"]])
+                    :effects))))
+
+  (testing "Expands actions recursively"
+    (is (= (-> {:nexus/actions
+                {:actions/inc
+                 (fn [_ n]
+                   [[:actions/plus n 1]])
+                 :actions/plus
+                 (fn [_ a b]
+                   [[:actions/store "n" (+ a b)]])}}
+               (nexus/expand-actions {} [[:actions/inc 2]])
+               :effects)
+           [[:actions/store "n" 3]])))
+
+  (testing "Interpolates placeholders in expanded actions"
+    (is (= (-> {:nexus/actions
+                {:actions/inc
+                 (fn [_ n]
+                   [[:actions/plus n [:placeholders/one]]])
+                 :actions/plus
+                 (fn [_ a b]
+                   [[:actions/store "n" (+ a b)]])}
+                :nexus/placeholders
+                {:placeholders/one (fn [dispatch-data] (:one dispatch-data))}}
+               (nexus/expand-actions {} [[:actions/inc 2]] {:one 1})
+               :effects)
+           [[:actions/store "n" 3]])))
+
+  (testing "Returns errors from bad action handler"
+    (is (= (-> {:nexus/actions
+                {:actions/inc
+                 (fn [_ _]
+                   (throw (ex-info "Boom!" {})))}}
+               (nexus/expand-actions {} [[:actions/inc 2]])
+               h/datafy-errors)
+           {:errors [{:phase :expand-action
+                      :action [:actions/inc 2]
+                      :trace [[:actions/inc 2]]
+                      :err {:message "Boom!"
+                            :data {}}}]}))))

@@ -77,6 +77,46 @@
   [nexus dispatch-data actions]
   (mapv #(interpolate-1 nexus dispatch-data %) actions))
 
+(defn expand-actions
+  "Loops over `actions`, and expands each action to a list of actions with
+  available implementations in `nexus`. Passes `state` to each implementation.
+  Returns a map of `{:effects :errors}`."
+  [nexus state actions & [dispatch-data]]
+  (loop [ctx {}
+         actions actions
+         trace []]
+    (if (empty? actions)
+      ctx
+      (let [[kind :as action] (interpolate-1 nexus dispatch-data (first actions))
+            next-actions (next actions)]
+        (if-let [f (get-in nexus [:nexus/actions kind])]
+          (let [[actions err] (try
+                                [(apply f state (next action))]
+                                (catch #?(:clj Exception :cljs :default) e
+                                  [nil e]))]
+            (cond
+              err
+              (recur (->> {:action action
+                           :phase :expand-action
+                           :err err
+                           :trace (conj trace action)}
+                          (update ctx :errors conj))
+                     next-actions trace)
+
+              (nil? actions)
+              (recur ctx next-actions trace)
+
+              (not (actions? actions))
+              (recur (->> {:errors [{:action action
+                                     :phase :expand-action
+                                     :err (ex-info (str kind " should expand to a collection of actions")
+                                                   {:res actions})}]})
+                     next-actions trace)
+
+              :else
+              (recur ctx (vec (concat actions next-actions)) (conj trace action))))
+          (recur (update ctx :effects conjv action) next-actions trace))))))
+
 (defn ^:no-doc get-state [nexus ctx]
   (or (when-let [f (:nexus/system+dispatch-data->state nexus)]
         (f (:system ctx) (:dispatch-data ctx)))
