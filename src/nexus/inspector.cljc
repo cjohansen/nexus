@@ -268,7 +268,8 @@
      (first (filter (comp #{id} :id) log)))))
 
 (defn get-dispatch-entries [{:keys [dispatched-at dispatched-by dispatch-data dom-event
-                                    actions effects error errors dispatch-elapsed] :as dispatch}]
+                                    actions effects dispatches error errors dispatch-elapsed]
+                             :as dispatch}]
   (concat
    [{:label (hiccup/string-label "Dispatched at")
      :k :dispatched-at
@@ -309,16 +310,15 @@
                  :v (->ErrorDetail error)}
           (= 0 idx) (assoc :label (hiccup/string-label "Errors"))))
       errors))
-   (let [dispatches (mapcat :dispatches effects)]
-     (->> dispatches
-          (map-indexed
-           (fn [idx {:keys [id dispatched-at actions]}]
-             (cond-> {:absolute-path [(->DispatchId id dispatched-at)]
-                      :v (->Actions actions)}
-               (= 0 idx) (assoc :label (hiccup/string-label
-                                        (if (= 1 (count dispatches))
-                                          "Nested dispatch"
-                                          "Nested dispatches"))))))))
+   (->> dispatches
+        (map-indexed
+         (fn [idx {:keys [id dispatched-at actions]}]
+           (cond-> {:absolute-path [(->DispatchId id dispatched-at)]
+                    :v (->Actions actions)}
+             (= 0 idx) (assoc :label (hiccup/string-label
+                                      (if (= 1 (count dispatches))
+                                        "Nested dispatch"
+                                        "Nested dispatches")))))))
    [{:label (hiccup/string-label "Dispatch elapsed")
      :k :dispatch-elapsed
      :v dispatch-elapsed}]))
@@ -363,8 +363,8 @@
     [::ui/code (time/hh:mm:ss dispatched-at)])
 
   dp/IKeyLookup
-  (lookup [_ log]
-    (->Dispatch (get (:entries log) id))))
+  (lookup [_ {:keys [entries]}]
+    (->Dispatch (update (get entries id) :dispatches #(map entries %)))))
 
 (defn ->dispatch-key [dispatch]
   (->DispatchKey (:id dispatch) (:dispatched-at dispatch)))
