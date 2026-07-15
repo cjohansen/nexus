@@ -152,14 +152,8 @@
                                        :state {:number 44}
                                        :effect-elapsed {:ms 1.0, :slow? false}}]
                          :expansion-elapsed {:ms 4.0, :slow? false}}]
-              :effects [{:action [:effects/save [:number] 44]
-                         :result {:number 44}
-                         :state {:number 2}
-                         :effect-elapsed {:ms 1.0, :slow? false}}
-                        {:action [:effects/save [:old [:number]] 2]
-                         :result {:number 44, :old {[:number] 2}}
-                         :state {:number 44}
-                         :effect-elapsed {:ms 1.0, :slow? false}}]
+              :effects [[:actions 0 :expansions 0]
+                        [:actions 0 :expansions 1]]
               :dispatch-data {:num 42}
               :dispatch-elapsed {:ms 11.0, :slow? false}}}})))
 
@@ -190,14 +184,8 @@
                    :result {:number 6, :old {[:number] 5}}
                    :effect-elapsed {:ms 1.0, :slow? false}}]}]}]
              :effects
-             [{:action [:effects/save [:number] 6]
-               :state {:number 5}
-               :result {:number 6}
-               :effect-elapsed {:ms 1.0, :slow? false}}
-              {:action [:effects/save [:old [:number]] 5]
-               :state {:number 6}
-               :result {:number 6, :old {[:number] 5}},
-               :effect-elapsed {:ms 1.0, :slow? false}}]}})))
+             [[:actions 0 :expansions 0 :expansions 0]
+              [:actions 0 :expansions 0 :expansions 1]]}})))
 
   (testing "Marks dispatch as slow according to config"
     (is (true? (-> (let [dispatch (make-dispatcher {:number 5} {:slow-threshold 5})]
@@ -301,18 +289,7 @@
                         :d 4}
                :effect-elapsed {:ms 1.0, :slow? false}}]
              :effects
-             [{:state {:number 0}
-               :effects
-               [[:effects/save-batch :a 1]
-                [:effects/save-batch :b 2]
-                [:effects/save-batch :c 3]
-                [:effects/save-batch :d 4]],
-               :result {:number 0
-                        :a 1
-                        :b 2
-                        :c 3
-                        :d 4}
-               :effect-elapsed {:ms 1.0, :slow? false}}]}])))
+             [[:actions 0]]}])))
 
   (testing "Tolerates noop actions"
     (is (= (-> [[:actions/noop]]

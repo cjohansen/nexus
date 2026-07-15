@@ -268,7 +268,7 @@
      (first (filter (comp #{id} :id) log)))))
 
 (defn get-dispatch-entries [{:keys [dispatched-at dispatched-by dispatch-data dom-event
-                                    actions effects error errors dispatch-elapsed]}]
+                                    actions effects error errors dispatch-elapsed] :as dispatch}]
   (concat
    [{:label (hiccup/string-label "Dispatched at")
      :k :dispatched-at
@@ -292,10 +292,11 @@
           (= 0 idx) (assoc :label (hiccup/string-label "Actions"))))
       actions))
    (map-indexed
-    (fn [idx effect-expansion]
-      (cond-> {:k (->ActionKey effect-expansion)
-               :v (->ActionDetail effect-expansion)}
-        (= 0 idx) (assoc :label (hiccup/string-label "Effects"))))
+    (fn [idx path]
+      (let [effect-expansion (get-in dispatch path)]
+        (cond-> {:k (->ActionKey effect-expansion)
+                 :v (->ActionDetail effect-expansion)}
+          (= 0 idx) (assoc :label (hiccup/string-label "Effects")))))
     effects)
    (when error
      [{:label (hiccup/string-label "Error")
@@ -562,7 +563,7 @@
 
                       (:effects ctx)
                       (update-in path merge (select-keys ctx [:effects :state])))]
-          (update entry :effects conjv (get-in entry path))))))
+          (update entry :effects conjv path)))))
   (cond-> ctx
     (nil? (:nexus/action (meta (:effect ctx)))) (dissoc ::interpolate-path)))
 

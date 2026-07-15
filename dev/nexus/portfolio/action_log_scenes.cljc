@@ -1,6 +1,5 @@
 (ns nexus.portfolio.action-log-scenes
-  (:require [dataspex.ui :as ui]
-            [nexus.hiccup-helper :as hh]
+  (:require [nexus.hiccup-helper :as hh]
             [nexus.inspector :as inspector]
             [portfolio.replicant :refer [defscene]]))
 
@@ -22,7 +21,7 @@
    :interpolation-elapsed (inspector/->timing 12)
    :expansion-elapsed (inspector/->timing 23)
    :expansions [{:action [:dev/log :create-task "task-id" "Do chores"]
-                 :expansions [{:effect [:dev/log :create-task "task-id" "Do chores"]
+                 :expansions [{:action [:dev/log :create-task "task-id" "Do chores"]
                                :result nil
                                :state {:tasks []
                                        :transient {:syncing {"task-id" true}}}
@@ -141,7 +140,7 @@
      :dispatched-at #inst "2025-06-11T08:06:58"
      :dispatch-elapsed (inspector/->timing 31)
      :actions [add-task-action]
-     :effects (:expansions add-task-tx)
+     :effects [[:actions 0 :expansions 0 :expansions 0]]
      :errors [{}]}
 
     #uuid "81425764-6219-43f1-aa61-07110ea16fca"
@@ -150,7 +149,7 @@
      :dispatch-elapsed (inspector/->timing 12)
      :dispatched-by {}
      :actions [add-task-action]
-     :effects (:expansions add-task-tx)}
+     :effects [[:actions 0 :expansions 0 :expansions 0]]}
 
     #uuid "29e14b68-a5a8-4eac-8ed8-ab58df40480f"
     {:id #uuid "29e14b68-a5a8-4eac-8ed8-ab58df40480f"
@@ -158,28 +157,24 @@
      :dispatch-elapsed (inspector/->timing 233 {:slow? true})
      :dispatch-data {:number 42}
      :dispatches [#uuid "2b105ea8-99cc-4d7b-aabf-fc2568c56d0a"]
-     :effects (concat
-               [{:effect [:state/assoc-in [:transient :syncing "task-id"] true]
-                 :effect-elapsed {:ms 1.0 :slow? false}
-                 :state {:tasks []}
-                 :result {:tasks []
-                          :transient {:syncing {"task-id" true}}}
-                 :dispatches [{:id #uuid "2b105ea8-99cc-4d7b-aabf-fc2568c56d0a"
-                               :dispatched-at #inst "2025-06-11T08:09:13"
-                               :actions [[:transient/assoc-in [:syncing "task-id"] false]]}]}
-                {:effect [:dev/log :create-task "task-id" "Do chores"]
-                 :effect-elapsed {:ms 1.0 :slow? false}
-                 :state {:tasks []
-                         :transient {:syncing {"task-id" true}}}
-                 :result nil}]
-               (:expansions add-task-tx))
+     :effects [[:actions 0 :expansions 0]
+               [:actions 0 :expansions 1]
+               [:actions 1 :expansions 0 :expansions 0]]
      :actions
      [{:action [:transient/assoc-in [:syncing "task-id"] true]
-       :expansions [{:effect [:state/assoc-in [:transient :syncing "task-id"] true]
+       :expansions [{:action [:state/assoc-in [:transient :syncing "task-id"] true]
                      :state {:tasks []}
                      :effect-elapsed {:ms 1.0 :slow? false}
                      :result {:tasks []
-                              :transient {:syncing {"task-id" true}}}}]
+                              :transient {:syncing {"task-id" true}}}
+                     :dispatches [{:id #uuid "2b105ea8-99cc-4d7b-aabf-fc2568c56d0a"
+                                   :dispatched-at #inst "2025-06-11T08:09:13"
+                                   :actions [[:transient/assoc-in [:syncing "task-id"] false]]}]}
+                    {:action [:dev/log :create-task "task-id" "Do chores"]
+                     :effect-elapsed {:ms 1.0 :slow? false}
+                     :state {:tasks []
+                             :transient {:syncing {"task-id" true}}}
+                     :result nil}]
        :expansion-elapsed (inspector/->timing 16)
        :state {:tasks []}}
       add-task-action]
@@ -201,12 +196,7 @@
      :dispatched-at #inst "2025-06-11T08:09:13"
      :dispatch-elapsed (inspector/->timing 65)
      :dispatch-data {:number 42}
-     :effects [{:effect [:state/assoc-in [:transient :syncing "task-id"] false]
-                :effect-elapsed {:ms 1.0 :slow? false}
-                :state {:tasks []
-                        :transient {:syncing {"task-id" true}}}
-                :result {:tasks []
-                         :transient {:syncing {"task-id" false}}}}]
+     :effects [[:actions 0 :expansions 0]]
      :actions
      [{:action [:transient/assoc-in [:syncing "task-id"] false]
        :expansions [{:effect [:state/assoc-in [:transient :syncing "task-id"] false]
