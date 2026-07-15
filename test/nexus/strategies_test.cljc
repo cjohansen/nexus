@@ -48,7 +48,8 @@
                     [:effects/fail 3]])
                h/datafy-errors)
            {:errors [{:phase :execute-effect
-                      :trace [[:effects/fail 3]]
+                      :trace [[:actions/succeed 2]
+                              [:effects/fail 3]]
                       :effect [:effects/fail 3]
                       :err {:message "Boom!"
                             :data {}}}]}))))
