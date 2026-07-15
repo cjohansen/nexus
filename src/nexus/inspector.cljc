@@ -440,9 +440,6 @@
        (filter event?)
        first))
 
-(defn get-log-idx [log ctx]
-  (.indexOf (mapv :id @log) (::id ctx)))
-
 (defn ^{:indent 2} update-log-entry [log ctx f & args]
   (apply swap! log update-in [:entries (::id ctx)] f args))
 
@@ -451,8 +448,7 @@
 (defn get-dispatch-stub [log id]
   (let [dispatch (get-in @log [:entries id])]
     (assoc (select-keys dispatch [:id :dispatched-at])
-           :actions (mapv (fn [{:keys [action effect]}]
-                            (or action effect)) (:actions dispatch)))))
+           :actions (mapv :action (:actions dispatch)))))
 
 (defn before-dispatch [log {:keys [dispatch-data] :as ctx}]
   (let [id (random-uuid)
@@ -468,14 +464,14 @@
                                 (::id ctx) (assoc :dispatched-by (get-dispatch-stub log (::id ctx)))))
               (::id ctx) (update-in [:entries (::id ctx) :dispatches] conjv id)
               :then (update :chronology conj id)))
-    (assoc ctx
+    (assoc (dissoc ctx ::interpolate-path)
            ::id id
            ::dispatch-start ms
            ::path [:actions]
-           ::before-interpolate ms
            ::dispatched-actions (:actions ctx)
            ::parent-path (when (::id ctx)
-                           (concat [:entries (::id ctx)] (::path ctx) [:dispatches])))))
+                           (let [path (into [:entries (::id ctx)] (pop (pop (::path ctx))))]
+                             (into path [(dec (count (get-in @log path))) :dispatches]))))))
 
 (defn after-dispatch [log ctx]
   (update-log-entry log ctx
@@ -494,53 +490,81 @@
     (swap! log update-in path conjv (get-dispatch-stub log (::id ctx))))
   ctx)
 
+(defn batched? [ctx]
+  (let [action-k (first (:action ctx))]
+    (-> ctx :nexus :nexus/effects action-k meta :nexus/batch)))
+
 (defn before-action [log ctx]
-  (let [idx (-> (get log (get-log-idx log ctx))
-                (get-in (::path ctx))
-                count)
-        now (now-ms)]
-    (update-log-entry log ctx
-      (fn [entry]
-        (update-in entry (::path ctx) conjv
-                   (-> (if-let [details (meta (:action ctx))]
-                         {:action (:nexus/action details)
-                          :interpolated (:action ctx)
-                          :interpolations (->> (:nexus/interpolations details)
-                                               (map (juxt :placeholder :resolution))
-                                               (into {}))
-                          :interpolation-elapsed (measure-elapsed @log now (::before-interpolate ctx))}
-                         {:action (:action ctx)})
-                       (assoc :state (:state ctx))))))
-    (-> (update ctx ::path into [idx :expansions])
-        (assoc ::before-action now))))
+  (if (batched? ctx)
+    ctx
+    (let [idx (count (get-in @log (into [:entries (::id ctx)] (::path ctx))))
+          now (now-ms)]
+      (update-log-entry log ctx
+        (fn [entry]
+          (cond-> (update-in entry (::path ctx) conjv
+                             {:action (:action ctx)
+                              :state (:state ctx)})
+            (::interpolate-path ctx)
+            (assoc-in (conj (::interpolate-path ctx) :interpolation-elapsed)
+                      (measure-elapsed @log now (::before-interpolate ctx))))))
+      (-> (update ctx ::path into [idx :expansions])
+          (assoc ::before-action now
+                 ::before-interpolate now
+                 ::interpolate-path (conj (::path ctx) idx))))))
 
 (defn after-action [log ctx]
-  (update-log-entry log ctx
-    (fn [entry]
-      (assoc-in entry (conj (pop (::path ctx)) :expansion-elapsed)
-                (measure-elapsed @log (now-ms) (::before-action ctx)))))
-  (update ctx ::path #(pop (pop %))))
+  (if (batched? ctx)
+    ctx
+    (let [path (pop (::path ctx))
+          details (-> ctx :action meta)]
+      (update-log-entry log ctx
+        (fn [entry]
+          (cond-> entry
+            (seq (get-in entry (conj path :expansions)))
+            (assoc-in (conj path :expansion-elapsed)
+                      (measure-elapsed @log (now-ms) (::before-action ctx)))
+
+            (:nexus/action details)
+            (update-in path merge {:interpolated (:action ctx)
+                                   :interpolations (->> (:nexus/interpolations details)
+                                                        (map (juxt :placeholder :resolution))
+                                                        (into {}))})
+
+            (nil? (:nexus/action details))
+            (update-in path dissoc :interpolation-elapsed))))
+      (update ctx ::path #(pop (pop %))))))
 
 (defn before-effect [log ctx]
-  (update-log-entry log ctx
-    (fn [entry]
-      (update-in entry (::path ctx) conjv
-                 (merge {:state (:state ctx)}
-                        (select-keys ctx [:effect :effects])))))
-  (-> (update ctx ::path conj (dec (count (-> (:entries @log)
-                                              (get (::id ctx))
-                                              (get-in (::path ctx))))))
-      (assoc ::before-effectuate (now-ms))))
+  (when-not (batched? ctx)
+    (update-log-entry log ctx
+      (fn [entry]
+        (cond-> entry
+          (::interpolate-path ctx)
+          (assoc-in (conj (::interpolate-path ctx) :interpolation-elapsed)
+                    (measure-elapsed @log (now-ms) (::before-interpolate ctx)))))))
+  (let [idx (when (:effects ctx)
+               (count (get-in @log (into [:entries (::id ctx)] (::path ctx)))))]
+    (cond-> (assoc ctx ::before-effectuate (now-ms))
+      idx (update ::path into [idx :expansions]))))
 
 (defn after-effect [log ctx]
   (let [now (now-ms)]
     (update-log-entry log ctx
       (fn [entry]
-        (let [entry (update-in entry (::path ctx) into
-                               {:result (:res ctx)
-                                :effect-elapsed (measure-elapsed @log now (::before-effectuate ctx))})]
-          (update entry :effects conjv (get-in entry (::path ctx)))))))
-  (update ctx ::path pop))
+        (let [path* (pop (pop (::path ctx)))
+              path (conj path* (cond-> (count (get-in entry path*))
+                                 (nil? (:effects ctx)) dec))
+              entry (cond-> (update-in entry path merge
+                                       {:result (:res ctx)
+                                        :effect-elapsed (measure-elapsed @log now (::before-effectuate ctx))})
+                      (nil? (:nexus/action (meta (:effect ctx))))
+                      (update-in path dissoc :interpolation-elapsed)
+
+                      (:effects ctx)
+                      (update-in path merge (select-keys ctx [:effects :state])))]
+          (update entry :effects conjv (get-in entry path))))))
+  (cond-> ctx
+    (nil? (:nexus/action (meta (:effect ctx)))) (dissoc ::interpolate-path)))
 
 (defn get-interceptor [log]
   {:id ::inspector

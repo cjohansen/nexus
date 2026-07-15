@@ -18,21 +18,25 @@
         )))
   error)
 
+(defn ^{:no-doc true :indent 1} try-f [ctx f & [data]]
+  (try
+    (cond-> ctx
+      (ifn? f) f)
+    (catch #?(:clj Exception :cljs :default) e
+      (update ctx :errors conjv
+              (->> (assoc data
+                          :err e
+                          :trace (:trace ctx))
+                   (log-error (:nexus ctx) ctx))))))
+
 (defn ^{:indent 1 :no-doc true} run-interceptors [ctx interceptors [before after k]]
   (letfn [(invoke [f state phase interceptor]
-            (try
-              (cond-> state
-                (ifn? f) f)
-              (catch #?(:clj Exception :cljs :default) e
-                (update state :errors conjv
-                        (->> (select-keys interceptor [:id])
-                             (into (cond-> {:phase phase
-                                            :err e
-                                            :trace (:trace state)}
-                                     k (assoc k (get ctx k))))
-                             (log-error (:nexus ctx) ctx))))))]
+            (->> (select-keys interceptor [:id])
+                 (into (cond-> {:phase phase}
+                         k (assoc k (get ctx k))))
+                 (try-f state f)))]
     (loop [state (cond-> (assoc ctx :queue interceptors :stack ())
-                   k (update :trace conjv (get ctx k)))]
+                   (= :action k) (update :trace conjv (get ctx k)))]
       (cond
         (:queue state)
         (let [interceptor (first (:queue state))
@@ -128,32 +132,29 @@
 
 (declare dispatch-actions)
 
-(defn ^:no-doc dispatch-action [nexus dispatch! ctx action-f action]
-  (run-interceptors (assoc ctx :action action)
-    (conj (:nexus/interceptors nexus)
-          {:phase :expand-action
-           :before-action
-           (fn [ctx*]
-             (let [actions (apply action-f (:state ctx*) (next (:action ctx*)))]
-               (cond
-                 (empty? actions)
-                 (reset-ctx-nesting ctx (assoc ctx* :actions []))
+(defn ^:no-doc expand-and-dispatch-action [nexus dispatch! ctx action-f action]
+  (try-f ctx
+    (fn [ctx]
+      (let [actions (apply action-f (:state ctx) (next action))]
+        (cond
+          (empty? actions)
+          (assoc ctx :actions [])
 
-                 (not (actions? actions))
-                 (update ctx* :errors conjv
-                         (->> {:action action
-                               :phase :expand-action
-                               :trace (:trace ctx*)
-                               :err (ex-info (str (first action) " should expand to a collection of actions")
-                                             {:res actions
-                                              :action action})}
-                              (log-error nexus ctx)))
+          (not (actions? actions))
+          (update ctx :errors conjv
+                  (->> {:action action
+                        :phase :expand-action
+                        :trace (:trace ctx)
+                        :err (ex-info (str (first action) " should expand to a collection of actions")
+                                      {:res actions
+                                       :action action})}
+                       (log-error nexus ctx)))
 
-                 :else
-                 (->> (assoc ctx* :actions actions)
-                      (dispatch-actions nexus dispatch!)
-                      (reset-ctx-nesting ctx)))))})
-    [:before-action :after-action :action]))
+          :else
+          (->> (assoc ctx :actions actions)
+               (dispatch-actions nexus dispatch!)))))
+    {:action action
+     :phase :expand-action}))
 
 (defn ^:no-doc ->execute-ctx [ctx]
   (update ctx :dispatch
@@ -175,20 +176,32 @@
         [:before-effect :after-effect :effect])
       (dissoc :effect :res)))
 
+(defn ^:no-doc dispatch-action [nexus dispatch! ctx action]
+  (run-interceptors (assoc ctx :action action)
+    (conj (:nexus/interceptors nexus)
+          {:phase :expand-action
+           :before-action
+           (fn [ctx*]
+             (let [[action-k :as action] (interpolate-1 nexus (:dispatch-data ctx*) (:action ctx*))]
+               (or
+                (when-let [action-f (get-in nexus [:nexus/actions action-k])]
+                  (-> (->> (expand-and-dispatch-action nexus dispatch! ctx* action-f action)
+                           (reset-ctx-nesting ctx*))
+                      (assoc :action action)))
+                (when-let [effect-f (get-in nexus [:nexus/effects action-k])]
+                  (->> (execute-effect nexus dispatch! ctx* effect-f action)
+                       (reset-ctx-nesting ctx*)))
+                (update ctx* :errors conjv
+                        (->> {:phase :execute-effect
+                              :effect-k action-k
+                              :err (ex-info (str "No such effect " action-k) {:available-effects (keys (:nexus/effects nexus))})}
+                             (log-error nexus ctx*))))))})
+    [:before-action :after-action :action]))
+
 (defn dispatch-actions [nexus dispatch! {:keys [queue stack] :as ctx}]
   (-> (reduce
        (fn [ctx action]
-         (let [[action-k :as action] (interpolate-1 nexus (:dispatch-data ctx) action)]
-           (or
-            (when-let [action-f (get-in nexus [:nexus/actions action-k])]
-              (dispatch-action nexus dispatch! ctx action-f action))
-            (when-let [effect-f (get-in nexus [:nexus/effects action-k])]
-              (execute-effect nexus dispatch! ctx effect-f action))
-            (update ctx :errors conjv
-                    (->> {:phase :execute-effect
-                          :effect-k action-k
-                          :err (ex-info (str "No such effect " action-k) {:available-effects (keys (:nexus/effects nexus))})}
-                         (log-error nexus ctx))))))
+         (dispatch-action nexus dispatch! ctx action))
        (assoc ctx :state (get-state nexus ctx))
        (:actions ctx))
       (assoc :queue queue :stack stack)))

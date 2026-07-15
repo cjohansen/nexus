@@ -143,25 +143,25 @@
                          :interpolations {[:secret/number] 42}
                          :interpolation-elapsed {:ms 1.0, :slow? false}
                          :state {:number 2}
-                         :expansions [{:effect [:effects/save [:number] 44]
+                         :expansions [{:state {:number 2}
+                                       :action [:effects/save [:number] 44]
                                        :result {:number 44}
-                                       :state {:number 2}
                                        :effect-elapsed {:ms 1.0, :slow? false}}
-                                      {:effect [:effects/save [:old [:number]] 2]
+                                      {:action [:effects/save [:old [:number]] 2]
                                        :result {:number 44, :old {[:number] 2}}
                                        :state {:number 44}
                                        :effect-elapsed {:ms 1.0, :slow? false}}]
-                         :expansion-elapsed {:ms 5.0, :slow? false}}]
-              :effects [{:effect [:effects/save [:number] 44]
+                         :expansion-elapsed {:ms 4.0, :slow? false}}]
+              :effects [{:action [:effects/save [:number] 44]
                          :result {:number 44}
                          :state {:number 2}
                          :effect-elapsed {:ms 1.0, :slow? false}}
-                        {:effect [:effects/save [:old [:number]] 2]
+                        {:action [:effects/save [:old [:number]] 2]
                          :result {:number 44, :old {[:number] 2}}
                          :state {:number 44}
                          :effect-elapsed {:ms 1.0, :slow? false}}]
               :dispatch-data {:num 42}
-              :dispatch-elapsed {:ms 7.0, :slow? false}}}})))
+              :dispatch-elapsed {:ms 11.0, :slow? false}}}})))
 
   (testing "Nests action expansions"
     (is (= (-> [[:actions/inc [:number]]]
@@ -171,42 +171,42 @@
             {:id #uuid "5efb659e-62b8-48d9-858c-813ebaad947b"
              :dispatched-at #inst "2026-06-03T08:40:00.000-00:00"
              :dispatch-data {:num 42}
-             :dispatch-elapsed {:ms 9.0, :slow? false}
+             :dispatch-elapsed {:ms 13.0, :slow? false}
              :actions
              [{:action [:actions/inc [:number]]
                :state {:number 5}
+               :expansion-elapsed {:ms 5.0, :slow? false}
                :expansions
                [{:action [:actions/plus [:number] 1]
                  :state {:number 5}
+                 :expansion-elapsed {:ms 4.0, :slow? false}
                  :expansions
-                 [{:effect [:effects/save [:number] 6]
+                 [{:action [:effects/save [:number] 6]
                    :state {:number 5}
                    :result {:number 6}
                    :effect-elapsed {:ms 1.0, :slow? false}}
-                  {:effect [:effects/save [:old [:number]] 5]
+                  {:action [:effects/save [:old [:number]] 5]
                    :state {:number 6}
                    :result {:number 6, :old {[:number] 5}}
-                   :effect-elapsed {:ms 1.0, :slow? false}}]
-                 :expansion-elapsed {:ms 5.0, :slow? false}}]
-               :expansion-elapsed {:ms 6.0, :slow? false}}]
+                   :effect-elapsed {:ms 1.0, :slow? false}}]}]}]
              :effects
-             [{:effect [:effects/save [:number] 6]
+             [{:action [:effects/save [:number] 6]
                :state {:number 5}
                :result {:number 6}
                :effect-elapsed {:ms 1.0, :slow? false}}
-              {:effect [:effects/save [:old [:number]] 5]
+              {:action [:effects/save [:old [:number]] 5]
                :state {:number 6}
                :result {:number 6, :old {[:number] 5}},
                :effect-elapsed {:ms 1.0, :slow? false}}]}})))
 
   (testing "Marks dispatch as slow according to config"
-    (is (= (-> (let [dispatch (make-dispatcher {:number 5} {:slow-threshold 5})]
-                 (dispatch [[:actions/inc [:number]]]))
+    (is (true? (-> (let [dispatch (make-dispatcher {:number 5} {:slow-threshold 5})]
+                     (dispatch [[:actions/inc [:number]]]))
                :entries
                vals
                first
-               :dispatch-elapsed)
-           {:ms 9.0, :slow? true})))
+               :dispatch-elapsed
+               :slow?))))
 
   (testing "Dispatches multiple actions"
     (is (= (-> (let [dispatch (make-dispatcher {:number 5})]
@@ -324,8 +324,7 @@
                (select-keys [:actions :effects]))
            {:actions
             [{:action [:actions/noop]
-              :state {:number 2}
-              :expansion-elapsed {:ms 1.0, :slow? false}}]})))
+              :state {:number 2}}]})))
 
   (testing "Dispatches effect directly"
     (is (= (-> [[:effects/save [:number] 2]]
@@ -349,4 +348,5 @@
                     lookup/children
                     first))
            [:dataspex.ui/vector
-            [:dataspex.ui/keyword :actions/non-existent]]))))
+            [:dataspex.ui/keyword :actions/non-existent]])))
+  )

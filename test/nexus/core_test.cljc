@@ -163,11 +163,11 @@
              (-> test-nexus
                  (assoc-in [:nexus/actions :actions/test] (constantly nil))
                  (h/with-interceptor :before-action
-                   #(assoc % ::before-action-ran? true))
+                     #(assoc % ::before-action-ran? true))
                  (h/with-interceptor :after-action
-                   (fn [context]
-                     (swap! log conj (select-keys context [:action :actions ::before-action-ran?]))
-                     context))
+                     (fn [context]
+                       (swap! log conj (select-keys context [:action :actions ::before-action-ran?]))
+                       context))
                  (nexus/dispatch (atom {}) {} [[:actions/test "it"]]))
              @log)
            [{:action [:actions/test "it"]
@@ -236,23 +236,32 @@
                      context))
                  (nexus/dispatch (atom {:number 0}) {} [[:actions/plus [:number] 2]]))
              @log)
-           [{:in [:actions/plus [:number] 2]
+           [{:in [:effects/save [:number] 2]
+             :out [[:effects/save [:number] 2]]}
+            {:in [:actions/plus [:number] 2]
              :out [[:effects/save [:number] 2]]}])))
 
-  (testing "Does not call interceptors for actions that have no handlers"
+  (testing "Calls interceptors for actions that have no handlers"
     (is (= (let [log (atom [])]
-             (-> (h/with-interceptor test-nexus :before-action
+             (-> (h/with-interceptor test-nexus :after-action
                    (fn [ctx]
-                     (swap! log conj ctx)))
+                     (swap! log conj (select-keys ctx [:action :actions :errors]))
+                     ctx))
                  (nexus/dispatch (atom {:state "Here"}) {} [[:actions/unknown 2]]))
-             @log)
-           [])))
+             (map h/datafy-errors @log))
+           [{:errors
+             [{:phase :execute-effect
+               :effect-k :actions/unknown
+               :err {:message "No such effect :actions/unknown"
+                     :data {:available-effects [:effects/save]}}}]}])))
 
   (testing "Returns error from before-action interceptor"
     (let [system (atom {:state "Here"})]
       (is (= (-> (h/with-interceptor test-nexus :before-action
                    (fn [ctx]
-                     (throw (ex-info "Boom!" {:ctx ctx}))))
+                     (when (= :actions/plus (first (:action ctx)))
+                       (throw (ex-info "Boom!" {:ctx ctx})))
+                     ctx))
                  (nexus/dispatch system {} [[:actions/plus [:number] 2]])
                  h/datafy-errors)
              {:errors
@@ -278,14 +287,16 @@
     (let [system (atom {:number 0})]
       (is (= (-> (h/with-interceptor test-nexus :after-action
                    (fn [ctx]
-                     (throw (ex-info "Boom!" {:ctx ctx})))
+                     (when (= :actions/plus (first (:action ctx)))
+                       (throw (ex-info "Boom!" {:ctx ctx})))
+                     ctx)
                    :logger)
                  (nexus/dispatch system {} [[:actions/plus [:number] 2]])
                  h/datafy-errors)
              {:errors
               [{:phase :after-action
                 :id :logger
-                :trace nil
+                :trace [[:actions/plus [:number] 2]]
                 :action [:actions/plus [:number] 2]
                 :err
                 {:message "Boom!"
@@ -299,7 +310,7 @@
                    :dispatch-data {}
                    :dispatch ::h/fn
                    :queue nil
-                   :trace nil
+                   :trace [[:actions/plus [:number] 2]]
                    :stack nil
                    :results [{:effect [:effects/save [:number] 2]
                               :res {:number 2}}]}}}}]}))))
@@ -468,12 +479,18 @@
             [:before-action 1 :actions/plus]
             [:before-action 2 :actions/plus]
             [:before-action 3 :actions/plus]
+            [:before-action 1 :effects/save]
+            [:before-action 2 :effects/save]
+            [:before-action 3 :effects/save]
             [:before-effect 1 :effects/save]
             [:before-effect 2 :effects/save]
             [:before-effect 3 :effects/save]
             [:after-effect 3 :effects/save {:number 8}]
             [:after-effect 2 :effects/save {:number 8}]
             [:after-effect 1 :effects/save {:number 8}]
+            [:after-action 3 :effects/save [:effects/save]]
+            [:after-action 2 :effects/save [:effects/save]]
+            [:after-action 1 :effects/save [:effects/save]]
             [:after-action 3 :actions/plus [:effects/save]]
             [:after-action 2 :actions/plus [:effects/save]]
             [:after-action 1 :actions/plus [:effects/save]]
@@ -495,10 +512,14 @@
              @log)
            [[:before-dispatch 1 [[:actions/duplex]]]
             [:before-action 1 :actions/duplex]
+            [:before-action 1 :effects/save]
             [:before-effect 1 :effects/save]
             [:after-effect 1 :effects/save {:a 1}]
+            [:after-action 1 :effects/save [:effects/save :effects/save]]
+            [:before-action 1 :effects/save]
             [:before-effect 1 :effects/save]
             [:after-effect 1 :effects/save {:a 1 :b 2}]
+            [:after-action 1 :effects/save [:effects/save :effects/save]]
             [:after-action 1 :actions/duplex [:effects/save :effects/save]]
             [:after-dispatch 1
              [{:effect [:effects/save [:a] 1]
@@ -532,12 +553,16 @@
              :second-number 5}
             [[:before-dispatch 1 [[:effects/save [:number] [:dd/k :value]
                                    {:on-success [[:effects/save [:second-number] [:dd/k :number]]]}]]]
+             [:before-action 1 :effects/save]
              [:before-effect 1 :effects/save]
              [:before-dispatch 1 [[:effects/save [:second-number] [:dd/k :number]]]]
+             [:before-action 1 :effects/save]
              [:before-effect 1 :effects/save]
              [:after-effect 1 :effects/save {:number 5, :second-number 5, :step-size 3}]
+             [:after-action 1 :effects/save [:effects/save]]
              [:after-dispatch 1 [{:effect [:effects/save [:second-number] 5], :res {:number 5, :second-number 5, :step-size 3}}]]
              [:after-effect 1 :effects/save {:number 5, :step-size 3}]
+             [:after-action 1 :effects/save [:effects/save]]
              [:after-dispatch 1 [{:effect [:effects/save [:number] 5
                                            {:on-success [[:effects/save [:second-number] [:dd/k :number]]]}],
                                   :res {:number 5, :step-size 3}}]]]])))
@@ -662,10 +687,10 @@
                        (swap! log conj (second (:effect ctx)))
                        ctx))
                  (nexus/dispatch (atom {}) {}
-                                 [[:actions/inc :a]
-                                  [:actions/add-ks [:b :c :d]]
-                                  [:actions/add-ks [:e :f :g]]
-                                  [:actions/inc :h]]))
+                     [[:actions/inc :a]
+                      [:actions/add-ks [:b :c :d]]
+                      [:actions/add-ks [:e :f :g]]
+                      [:actions/inc :h]]))
              @log)
            [:a :b :c :d :e :f :g :h])))
 
@@ -738,7 +763,9 @@
     (is (= (let [errors (atom [])]
              (-> (h/with-interceptor test-nexus :before-action
                    (fn [ctx]
-                     (throw (ex-info "Boom!" {:ctx ctx}))))
+                     (when (= :actions/plus (first (:action ctx)))
+                       (throw (ex-info "Boom!" {:ctx ctx})))
+                     ctx))
                  (assoc :nexus/on-error #(swap! errors conj %2))
                  (nexus/dispatch (atom {}) {} [[:actions/plus [:number] 2]]))
              (h/summarize-errors @errors))
@@ -748,7 +775,9 @@
     (is (= (let [errors (atom [])]
              (-> (h/with-interceptor test-nexus :after-action
                    (fn [ctx]
-                     (throw (ex-info "Boom!" {:ctx ctx}))))
+                     (when (= :actions/plus (first (:action ctx)))
+                       (throw (ex-info "Boom!" {:ctx ctx})))
+                     ctx))
                  (assoc :nexus/on-error #(swap! errors conj %2))
                  (nexus/dispatch (atom {}) {} [[:actions/plus [:number] 2]]))
              (h/summarize-errors @errors))
@@ -789,32 +818,44 @@
 (deftest dispatch-order
   (testing "Executes effects prior to action expansion"
     (is (= (h/test-dispatch-order nexus/dispatch [[:fx1] [:fx2] [:ax1]])
-           [[:exec-effect [:fx1]]
-            [:exec-effect [:fx2]]
-            [:expand-action [:ax1]]
-            [:exec-effect [:fx1]]
-            [:exec-effect [:fx2]]])))
+           [[:action [:fx1]]
+            [:effect [:fx1]]
+            [:action [:fx2]]
+            [:effect [:fx2]]
+            [:action [:ax1]]
+            [:action [:fx1]]
+            [:effect [:fx1]]
+            [:action [:fx2]]
+            [:effect [:fx2]]])))
 
   (testing "Expands actions lazily"
     (is (= (h/test-dispatch-order nexus/dispatch [[:ax1] [:ax2]])
-           [[:expand-action [:ax1]]
-            [:exec-effect [:fx1]]
-            [:exec-effect [:fx2]]
-            [:expand-action [:ax2]]
-            [:exec-effect [:fx3]]
-            [:exec-effect [:fx4]]]))))
+           [[:action [:ax1]]
+            [:action [:fx1]]
+            [:effect [:fx1]]
+            [:action [:fx2]]
+            [:effect [:fx2]]
+            [:action [:ax2]]
+            [:action [:fx3]]
+            [:effect [:fx3]]
+            [:action [:fx4]]
+            [:effect [:fx4]]]))))
 
 (deftest interpolation-order
   (testing "Interpolates actions in dispatched order"
     (is (= (->> [[:ax1 [:interpolation/order]]
                  [:ax2 [:interpolation/order]]]
                 (h/test-dispatch-order nexus/dispatch))
-           [[:expand-action [:ax1 [:interpolated/during 0]]]
-            [:exec-effect [:fx1]]
-            [:exec-effect [:fx2]]
-            [:expand-action [:ax2 [:interpolated/during 3]]]
-            [:exec-effect [:fx3]]
-            [:exec-effect [:fx4]]]))))
+           [[:action [:ax1 [:interpolated/during 1]]]
+            [:action [:fx1]]
+            [:effect [:fx1]]
+            [:action [:fx2]]
+            [:effect [:fx2]]
+            [:action [:ax2 [:interpolated/during 6]]]
+            [:action [:fx3]]
+            [:effect [:fx3]]
+            [:action [:fx4]]
+            [:effect [:fx4]]]))))
 
 (deftest expand-actions-test
   (testing "Noops without any expansions"

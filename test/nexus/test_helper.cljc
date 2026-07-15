@@ -74,13 +74,21 @@
                       (reset! !last-dispatch-order [])
                       ctx)
    :before-action (fn [{:keys [action] :as ctx}]
-                    (swap! !last-dispatch-order conj [:expand-action action])
+                    (swap! !last-dispatch-order conj [:action action])
                     ctx)
+   :after-action (fn [{:keys [action] :as ctx}]
+                   (when-let [raw (-> action meta :nexus/action)]
+                     (swap! !last-dispatch-order
+                            (fn [events]
+                              (mapv (fn [event]
+                                      (if (= (second event) raw)
+                                        [(first event) action]
+                                        event))
+                                    events))))
+                   ctx)
    :before-effect (fn [{:keys [effect] :as ctx}]
-                    (swap! !last-dispatch-order conj [:exec-effect effect])
+                    (swap! !last-dispatch-order conj [:effect effect])
                     ctx)})
-
-(def !system (atom {:executions 0}))
 
 (def nexus
   {:nexus/system->state (fn [{:keys [!system]}] @!system)
