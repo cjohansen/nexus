@@ -252,8 +252,10 @@
            [{:errors
              [{:phase :execute-effect
                :effect-k :actions/unknown
-               :err {:message "No such effect :actions/unknown"
-                     :data {:available-effects [:effects/save]}}}]}])))
+               :err {:message #?(:squint "No such effect actions/unknown"
+                                 :default "No such effect :actions/unknown")
+                     :data {:available-effects #?(:squint ["effects/save"]
+                                                  :default [:effects/save])}}}]}])))
 
   (testing "Returns error from before-action interceptor"
     (let [system (atom {:state "Here"})]
@@ -892,8 +894,10 @@
            {:errors
             [{:action [:actions/test "it"]
               :phase :expand-action
-              :err {:message ":actions/test should expand to a collection of actions"
-                    :data {:res [:actions/store 2 "it"]}}}]})))
+              :err #?(:squint {:message "actions/test should expand to a collection of actions"
+                               :data {:res ["actions/store" 2 "it"]}}
+                      :default {:message ":actions/test should expand to a collection of actions"
+                                :data {:res [:actions/store 2 "it"]}})}]})))
 
   (testing "Expands action to empty list of effects"
     (is (empty? (-> {:nexus/actions
