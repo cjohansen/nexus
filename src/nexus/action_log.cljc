@@ -36,4 +36,5 @@
   [& [opt]]
   (let [log (create-log opt)]
     (nxr/register-interceptor! (inspector/get-interceptor log))
-    (nxr/register-interceptor! (get-render-interceptor log opt))))
+    (nxr/register-interceptor! (get-render-interceptor log opt))
+    log))
