@@ -1,7 +1,6 @@
 (ns nexus.portfolio.action-log-scenes
-  (:require [dataspex.panel :as panel]
-            [dataspex.ui :as ui]
-            [lookup.core :as lookup]
+  (:require [dataspex.ui :as ui]
+            [nexus.hiccup-helper :as hh]
             [nexus.inspector :as inspector]
             [portfolio.replicant :refer [defscene]]))
 
@@ -218,67 +217,38 @@
        :state {:tasks []
                :transient {:syncing {"task-id" true}}}}]}}})
 
-(defn render-panel [log & [path]]
-  (panel/render-inspector
-   {"Actions"
-    {:dataspex/path (or path [])
-     :dataspex/activity :dataspex.activity/browse
-     :dataspex/inspectee "Actions"
-     :dataspex/auditable? false
-     :val (inspector/->LogInspector (assoc log :now (inspector/now)))}}))
-
-(defn find-navigate-path [dataspex-entry]
-  (->> dataspex-entry
-       lookup/attrs
-       ::ui/actions
-       (filter (comp #{:dataspex.actions/navigate} first))
-       first
-       last))
-
-(defn navigate-to [log path]
-  (->> path
-       (reduce
-        (fn [dataspex-path n]
-          (->> (render-panel log dataspex-path)
-               (lookup/select [:dataspex.ui/entry])
-               (drop n)
-               first
-               find-navigate-path))
-        [])
-       (render-panel log)))
-
 (defscene action-list
-  (render-panel log))
+  (hh/render-panel log))
 
 (defscene dispatch-details
-  (navigate-to log [1]))
+  (hh/navigate-to log [1]))
 
 (defscene nested-dispatch
-  (navigate-to log [0]))
+  (hh/navigate-to log [0]))
 
 (defscene event-details
-  (navigate-to log [1 1]))
+  (hh/navigate-to log [1 1]))
 
 (defscene dispatch-data
-  (navigate-to log [1 2]))
+  (hh/navigate-to log [1 2]))
 
 (defscene action-detail
-  (navigate-to log [1 4]))
+  (hh/navigate-to log [1 4]))
 
 (defscene action-detail-action
-  (navigate-to log [1 4 0]))
+  (hh/navigate-to log [1 4 0]))
 
 (defscene action-detail-interpolations
-  (navigate-to log [1 4 1]))
+  (hh/navigate-to log [1 4 1]))
 
 (defscene action-detail-nested-action
-  (navigate-to log [1 4 5]))
+  (hh/navigate-to log [1 4 5]))
 
 (defscene action-detail-nested-dispatch
-  (navigate-to log [1 8]))
+  (hh/navigate-to log [1 8]))
 
 (defscene direct-effect-dispatch
-  (render-panel
+  (hh/render-panel
    {:slow-threshold 100
     :entries
     {#uuid "5efb659e-62b8-48d9-858c-813ebaad947b"
@@ -358,10 +328,10 @@
    :now #inst "2026-06-03T08:42:00.000-00:00"})
 
 (defscene batched-dispatch-listing
-  (render-panel batched-dispatch))
+  (hh/render-panel batched-dispatch))
 
 (defscene batched-dispatch-detail
-  (navigate-to batched-dispatch [0]))
+  (hh/navigate-to batched-dispatch [0]))
 
 (defscene batched-dispatch-detail-actions
-  (navigate-to batched-dispatch [0 2]))
+  (hh/navigate-to batched-dispatch [0 2]))
