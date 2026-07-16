@@ -107,8 +107,8 @@
            {:errors
             [{:phase :execute-effect
               :effect-k :effects/no-such-thing
-              :err {:message #?(:squint "No such effect effects/no-such-thing"
-                                :default "No such effect :effects/no-such-thing")
+              :err {:message #?(:squint "No effect handler for effects/no-such-thing"
+                                :default "No effect handler for :effects/no-such-thing")
                     :data {:available-effects [:effects/save]}}}]})))
 
   (testing "Executes effect"
@@ -252,8 +252,8 @@
            [{:errors
              [{:phase :execute-effect
                :effect-k :actions/unknown
-               :err {:message #?(:squint "No such effect actions/unknown"
-                                 :default "No such effect :actions/unknown")
+               :err {:message #?(:squint "No effect handler for actions/unknown"
+                                 :default "No effect handler for :actions/unknown")
                      :data {:available-effects #?(:squint ["effects/save"]
                                                   :default [:effects/save])}}}]}])))
 
@@ -757,8 +757,8 @@
              (h/datafy-errors* @errors))
            [{:phase :execute-effect
              :effect-k :effects/no-such-thing
-             :err {:message #?(:squint "No such effect effects/no-such-thing"
-                               :default "No such effect :effects/no-such-thing")
+             :err {:message #?(:squint "No effect handler for effects/no-such-thing"
+                               :default "No effect handler for :effects/no-such-thing")
                    :data {:available-effects [:effects/save]}}}])))
 
   (testing "Catches error from before-action interceptor"

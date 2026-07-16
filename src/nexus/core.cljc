@@ -35,8 +35,7 @@
                  (into (cond-> {:phase phase}
                          k (assoc k (get ctx k))))
                  (try-f state f)))]
-    (loop [state (cond-> (assoc ctx :queue interceptors :stack ())
-                   (= :action k) (update :trace conjv (get ctx k)))]
+    (loop [state (assoc ctx :queue interceptors :stack ())]
       (cond
         (:queue state)
         (let [interceptor (first (:queue state))
@@ -177,7 +176,7 @@
       (dissoc :effect :res)))
 
 (defn ^:no-doc dispatch-action [nexus dispatch! ctx action]
-  (run-interceptors (assoc ctx :action action)
+  (run-interceptors (update (assoc ctx :action action) :trace conjv action)
     (conj (:nexus/interceptors nexus)
           {:phase :expand-action
            :before-action
@@ -194,7 +193,7 @@
                 (update ctx* :errors conjv
                         (->> {:phase :execute-effect
                               :effect-k action-k
-                              :err (ex-info (str "No such effect " action-k) {:available-effects (keys (:nexus/effects nexus))})}
+                              :err (ex-info (str "No effect handler for " action-k) {:available-effects (keys (:nexus/effects nexus))})}
                              (log-error nexus ctx*))))))})
     [:before-action :after-action :action]))
 
