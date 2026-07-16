@@ -7,8 +7,8 @@ The UI is a pure function of application state — but event handling can be
 messy. It doesn’t have to be. Good event handling is declarative, minimal, and
 keeps side-effects well contained.
 
-Nexus is a small, zero-dependency library for dispatching **actions** — data
-describing what should happen — with mostly pure functions.
+Nexus is a small, zero-dependency library for dispatching **actions**, data
+describing what should happen, with mostly pure functions.
 
 ```clj
 no.cjohansen/nexus {:mvn/version "2026.07.1"}
@@ -60,11 +60,11 @@ introduction to how it works.
     {:on {:click [[:actions/inc [:number]]]}}
     "Count!"]])
 
-;; Handle user input: register effects, actions and placeholders.
+;; Handle user input: register effects, expansions and placeholders.
 ;; If you don't like registering these globally, the next section
 ;; shows how to use nexus.core, which has no implicit state.
 (nxr/register-effect! :effects/save save)
-(nxr/register-action! :actions/inc increment)
+(nxr/register-expansion! :actions/inc increment)
 
 (nxr/register-placeholder! :event.target/value
   (fn [{:replicant/keys [dom-event]}]
@@ -105,8 +105,8 @@ Actions are vectors of an action type (keyword) and optional arguments:
 
 When you dispatch an action in Nexus, it is handled by either:
 
-1. an *action handler*, a pure function that maps system state and
-the action's arguments to other actions.
+1. an *expansion handler*, a pure function that maps system state and the
+   action's arguments to other actions.
 2. an *effect handler*, which performs side-effects according to:
    - a context map (we'll look at this later),
    - your *system*,
@@ -176,7 +176,7 @@ Holy swap, Batman! That's a lot of side-effects in one place. Our goal is to
 isolate logic in pure functions, so we can test, reuse, and compose behavior
 without changing the world. Let's fix that.
 
-### Pure actions
+### Pure expansions
 
 We will first replace our two effect handlers with a more generic
 effect handler that updates the application state:
@@ -192,19 +192,18 @@ effect handler that updates the application state:
 Then our two domain-specific actions, `:task/start-editing` and
 `:task/set-status`, can now be expressed in terms of this one low-level effect.
 
-We do that by implementing them as *action handlers*, which are pure functions
-that return a list of actions.
+We do that by implementing them as *expansion handlers*, which are pure
+functions that return a list of actions.
 
-Action handlers are called with an immutable snapshot of your system, which
-means we need to tell Nexus how to acquire the system snapshot.  Since our
-system is an atom, `deref` will do the job just fine:
+Expansion handlers are called with an immutable snapshot of your system, which
+means we need to tell Nexus how to acquire the system snapshot. Since our system
+is an atom, `deref` will do the job just fine:
 
 ```clj
 (def nexus
   {:nexus/system->state deref ;; <==
    :nexus/effects {,,,}
    :nexus/expansions          ;; <==
-   :nexus/actions             ;; <==
    {:task/start-editing
     (fn [state task-id]
       [[:effects/save [:tasks task-id :task/editing?] true]])
@@ -219,8 +218,8 @@ system is an atom, `deref` will do the job just fine:
 
 Now we also have clean separation between pure business logic and the
 side-effects. Your app will only ever need a handful of effect handlers; as your
-app grows you'll be adding action handlers. Nothing but pure functions all the
-way, baby!
+app grows you'll be adding expansion handlers. Nothing but pure functions all
+the way, baby!
 
 It's also worth noting that the data the UI dispatches hasn't
 changed. We still dispatch something like
@@ -230,15 +229,15 @@ changed. We still dispatch something like
 ```
 
 but instead of a hard-to-test effect handler responding to this data,
-we now have an easier-to-test, pure action handler which responds to
-it by yielding an effect like
+we now have an easier-to-test, pure expansion handler which responds to
+it by producing an effect like
 
 ```clj
 [:effects/save [:tasks "tid33" :task/status] :status/in-progress]
 ```
 
-This is what allows you to start small and grow your system on demand,
-with very little boilerplate.
+This way you canstart small and grow your system on demand, with very little
+boilerplate.
 
 ### Using dispatch data
 
@@ -273,7 +272,7 @@ Placeholders are implemented by the keyword:
 (def nexus
   {:nexus/system->state deref
    :nexus/effects {,,,}
-   :nexus/actions {,,,}
+   :nexus/expansions {,,,}
    :nexus/placeholders        ;; <==
    {:event.target/value
     (fn [dispatch-data]
@@ -340,7 +339,7 @@ One way to achieve this is to use another placeholder:
       now)}})
 
 (nexus/dispatch nexus system {:dom-event ,,,
-                             :now (js/Date.)}
+                              :now (js/Date.)}
  [[:task/update-title "tid33" [:event.target/value] [:clock/now]]])
 ```
 
@@ -646,7 +645,6 @@ Nexus' custom action panel like so:
 
 (defn inspect-actions [nexus]
   (let [log (action-log/create-log)]
-    (action-log/install-inspector log)
     (action-log/install-logger nexus log)))
 ```
 
@@ -679,8 +677,8 @@ Compiling the `nexus` map and passing it by hand makes things explicit at the
 cost of some boilerplate on your end. Maybe you're willing to swallow a little
 implicitness for a lot of convenience? Then `nexus.registry` is for you.
 
-`nexus.registry` provides some wrappers that collect effect handlers,
-action handlers, and placeholders in a global registry:
+`nexus.registry` provides some wrappers that collect effect handlers, expansion
+handlers, and placeholders in a global registry:
 
 ```clj
 (require '[nexus.registry :as nxr])
@@ -702,11 +700,11 @@ action handlers, and placeholders in a global registry:
   (fn [_ val]
     (or (some-> val parse-long) 0)))
 
-(nxr/register-action! :task/start-editing
+(nxr/register-expansion! :task/start-editing
   (fn [state task-id]
     [[:effects/save [:tasks task-id :task/editing?] true]]))
 
-(nxr/register-action! :task/set-status
+(nxr/register-expansion! :task/set-status
   (fn [state task-id status]
     (if (< (count (get-tasks-by-status state status))
            (get-status-limit state status))
@@ -725,7 +723,8 @@ action handlers, and placeholders in a global registry:
 ```
 
 Using the global registry makes the dev setup much easier, because you don't
-need to coordinate on the `nexus` map. Just add this to your development setup:
+need to manually coordinate on the `nexus` map. Just add this to your
+development setup:
 
 ```clj
 (require '[nexus.action-log :as action-log])
@@ -795,7 +794,7 @@ time-travel debugger.
 ----
 
 We’re not trying to scare you into using a library when 50 lines of code could
-work. But for ~160 lines, Nexus gives you a clean, tested, extensible dispatch
+work. But for ~230 lines, Nexus gives you a clean, tested, extensible dispatch
 system with excellent dev tooling built in.
 
 ## Nomenclature
@@ -821,13 +820,17 @@ Actions were deliberately not named "events" for two reasons:
    multiple different artifacts that are all named event does not make writing
    code easier.
 
-Action handlers are pure functions that take the state (see below) and any
-arguments from the action, and return a list of actions/effects.
+### Expansion handler
+
+An expansion handler is a pure function that takes the state (see below) and any
+arguments from the action, and returns a list of actions.
 
 ### Effect
 
 When an action reaches an effect handler to be processed for its
 side-effects, we call it an effect.
+
+### Effect handler
 
 An effect handler is a function that receives `ctx`, the live system and any
 action arguments and uses them to perform side-effects:
@@ -916,7 +919,7 @@ first error:
 
 (def nexus
   {:nexus/interceptors [strategies/fail-fast]
-   :nexus/actions ,,,
+   :nexus/expansions ,,,
    :nexus/effects ,,,})
 ```
 
@@ -947,7 +950,7 @@ Note that this will only throw the first of potentially several errors.
 ## Interceptors
 
 Interceptors let you instrument and control the flow of actions. They can run
-before or after dispatch, action handlers, and effect handlers.
+before or after dispatch, each individual action, and effect handlers.
 
 An interceptor is a map with an `:id` and any number of phase functions, keyed
 by:
@@ -989,9 +992,11 @@ Specific arguments passed to the various phase functions:
 
 ### `:before-action`
 
-`:before-action` is only called for actions that have a registered action
-handler. Any action that only has an effect handler will not be visible with
-this interceptor.
+`:before-action` is called for every dispatched action, and wraps the entire
+life-cycle of a single action. If the action `:actions/inc` expands to
+`:actions/plus` which expands to `:effects/save`, `:before-action` will be
+called three times in succession, before `:after-action` is called in reverse
+order.
 
 - `:state`
 - `:action`
@@ -1036,33 +1041,24 @@ effects:
 
    :before-action
    (fn [{:keys [action] :as ctx}]
-     (println "Expanding action:\n" (pr-str action))
+     (println "Dispatching action:\n" (pr-str action))
      ctx)
 
    :after-action
    (fn [{:keys [errors] :as ctx}]
      (when (seq errors)
-       (println "⚠️ Error while expanding action!")
+       (println "⚠️ Error while dispatching action!")
        (prn errors))
      ctx)
 
    :before-effect
-   (fn [{:keys [effect effects] :as ctx}]
-     (if effect
-       (println "Executing effect:\n" (pr-str effect))
-       (println "Executing batched effects:\n" (pr-str effects)))
-     ctx)
-
-   :after-effect
-   (fn [{:keys [errors] :as ctx}]
-     (when (seq errors)
-       (println "⚠️ Error while executing effect!")
-       (prn errors))
+   (fn [{:keys [effect] :as ctx}]
+     (println "Executing effect:\n" (pr-str effect))
      ctx)})
 
 (def nexus
   {:nexus/interceptors [logger]
-   :nexus/actions ,,,
+   :nexus/expansions ,,,
    :nexus/effects ,,,})
 ```
 

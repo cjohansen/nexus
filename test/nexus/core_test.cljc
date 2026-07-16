@@ -1,5 +1,6 @@
 (ns nexus.core-test
-  (:require [clojure.string :as str]
+  (:require [clojure.set :as set]
+            [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
             [nexus.core :as nexus]
             [nexus.test-helper :as h]))
@@ -15,7 +16,7 @@
     (fn [_ system path v]
       (swap! system assoc-in path v))}
 
-   :nexus/actions
+   :nexus/expansions
    {:actions/plus
     (fn [state path n]
       [[:effects/save path (+ (get-in state path 0) n)]])
@@ -125,6 +126,13 @@
              @system)
            {:value 2})))
 
+  (testing "Supports :nexus/actions for backwards compatibility"
+    (is (= (let [system (atom {:value 0})]
+             (->> [[:actions/plus [:value] 2]]
+                  (nexus/dispatch (set/rename-keys test-nexus {:nexus/expansions :nexus/actions}) system {:value 5}))
+             @system)
+           {:value 2})))
+
   (testing "Double expands and executes action"
     (is (= (let [system (atom {:value 0})]
              (->> [[:actions/inc [:value]]]
@@ -141,7 +149,7 @@
 
   (testing "Passes state to action handler"
     (is (= (-> test-nexus
-               (assoc :nexus/actions
+               (assoc :nexus/expansions
                       {:actions/test
                        (fn [state arg]
                          [[:effects/save (:path (:config state)) arg]])})
@@ -154,14 +162,14 @@
 
   (testing "Allows action to expand to nil"
     (is (= (-> test-nexus
-               (assoc-in [:nexus/actions :actions/test] (constantly nil))
+               (assoc-in [:nexus/expansions :actions/test] (constantly nil))
                (nexus/dispatch (atom {}) {} [[:actions/test "it"]]))
            {})))
 
   (testing "Preserves before-action context when action expands to nil"
     (is (= (let [log (atom [])]
              (-> test-nexus
-                 (assoc-in [:nexus/actions :actions/test] (constantly nil))
+                 (assoc-in [:nexus/expansions :actions/test] (constantly nil))
                  (h/with-interceptor :before-action
                      #(assoc % ::before-action-ran? true))
                  (h/with-interceptor :after-action
@@ -177,7 +185,7 @@
   (testing "Returns error when action handler does not return collection of actions"
     (is (= (-> test-nexus
                (assoc-in
-                [:nexus/actions :actions/test]
+                [:nexus/expansions :actions/test]
                 (fn [{:keys [config]} arg]
                   [:actions/store (:n config) arg]))
                (nexus/dispatch (atom {:config {:n 2}}) {} [[:actions/test "it"]])
@@ -193,13 +201,13 @@
 
   (testing "Expands action to empty list of effects"
     (is (empty? (-> test-nexus
-                    (assoc-in [:nexus/actions :actions/test]
+                    (assoc-in [:nexus/expansions :actions/test]
                               (fn [_ _] []))
                     (nexus/dispatch (atom {:config {:n 2}}) {} [[:actions/test "it"]])))))
 
   (testing "Interpolates placeholders in expanded actions"
     (is (= (-> test-nexus
-               (assoc-in [:nexus/actions :actions/inc]
+               (assoc-in [:nexus/expansions :actions/inc]
                          (fn [_ path]
                            [[:actions/plus path [:placeholders/one]]]))
                (assoc-in [:nexus/placeholders :placeholders/one] :one)
@@ -210,7 +218,7 @@
 
   (testing "Returns errors from bad action handler"
     (is (= (-> test-nexus
-               (assoc-in [:nexus/actions :actions/inc]
+               (assoc-in [:nexus/expansions :actions/inc]
                          (fn [_ _]
                            (throw (ex-info "Boom!" {}))))
                (nexus/dispatch (atom {}) {} [[:actions/inc 2]])
@@ -342,7 +350,7 @@
     ;; When recursively expanding actions, action order was being reversed
     (is (= (-> {:nexus/system->state deref
 
-                :nexus/actions
+                :nexus/expansions
                 {:actions/outer (fn [_] [[:actions/inner] [:effects/tail]])
                  :actions/inner (fn [_] [[:effects/a] [:effects/b] [:effects/c]])}
 
@@ -380,7 +388,7 @@
 
   (testing "Includes action in effect error trace"
     (is (= (-> {:nexus/system->state deref
-                :nexus/actions
+                :nexus/expansions
                 {:actions/prepare-to-fail
                  (fn [_]
                    [[:effects/fail]])}
@@ -505,7 +513,7 @@
 
   (testing "Runs interceptors for all effects"
     (is (= (let [log (atom [])]
-             (-> (assoc-in test-nexus [:nexus/actions :actions/duplex]
+             (-> (assoc-in test-nexus [:nexus/expansions :actions/duplex]
                            (fn [_]
                              [[:effects/save [:a] 1]
                               [:effects/save [:b] 2]]))
@@ -572,7 +580,7 @@
   (testing "Updates state snapshot after every effect"
     (is (= (-> {:nexus/system->state deref
 
-                :nexus/actions
+                :nexus/expansions
                 {:actions/create-thing
                  (fn [state title]
                    [[:effects/save [:things (:id state)] title]
@@ -609,8 +617,8 @@
 
   (testing "Nested dispatch that expands to no actions should not go into an infinite loop"
     (is (= (-> {:nexus/system->state deref
-                :nexus/actions {:actions/prepare-it (fn [_] [[:effects/doit]])
-                                :actions/noop (fn [_] [])}
+                :nexus/expansions {:actions/prepare-it (fn [_] [[:effects/doit]])
+                                   :actions/noop (fn [_] [])}
                 :nexus/effects
                 {:effects/doit
                  (fn [{:keys [dispatch]} _]
@@ -628,8 +636,8 @@
                                                               (:id ctx) (assoc :parent (:id ctx))))
                                             (-> (assoc ctx :id id)
                                                 (update :dispatch-trace conj id))))}]
-                  :nexus/actions {:actions/prepare-it (fn [_] [[:effects/doit]])
-                                  :actions/noop (fn [_] [])}
+                  :nexus/expansions {:actions/prepare-it (fn [_] [[:effects/doit]])
+                                     :actions/noop (fn [_] [])}
                   :nexus/effects
                   {:effects/doit
                    (fn [{:keys [dispatch]} _]
@@ -666,7 +674,7 @@
   (testing "Executes effects expanded from actions in order"
     (is (= (let [log (atom [])]
              (-> {:nexus/system->state deref
-                  :nexus/actions
+                  :nexus/expansions
                   {:actions/add-k
                    (fn [_ k]
                      [[:effects/save k nil]])
@@ -718,7 +726,7 @@
     (is (= (let [errors (atom [])]
              (-> test-nexus
                  (assoc-in
-                  [:nexus/actions :actions/test]
+                  [:nexus/expansions :actions/test]
                   (fn [{:keys [config]} arg]
                     [:actions/store (:n config) arg]))
                  (assoc :nexus/on-error #(swap! errors conj %2))
@@ -736,7 +744,7 @@
   (testing "Catches error from bad action handler"
     (is (= (let [errors (atom [])]
              (-> test-nexus
-                 (assoc-in [:nexus/actions :actions/inc]
+                 (assoc-in [:nexus/expansions :actions/inc]
                            (fn [_ _]
                              (throw (ex-info "Boom!" {}))))
                  (assoc :nexus/on-error #(swap! errors conj %2))
@@ -806,7 +814,7 @@
                   (fn [system dispatch-data]
                     (assoc @system :now (:now dispatch-data)))
 
-                  :nexus/actions
+                  :nexus/expansions
                   {:actions/noop (constantly nil)}}
                  (h/with-interceptor :before-action
                      (fn [ctx]
@@ -867,7 +875,7 @@
            [[:actions/test :it]])))
 
   (testing "Expands action"
-    (is (= (-> {:nexus/actions
+    (is (= (-> {:nexus/expansions
                 {:actions/test
                  (fn [_ arg]
                    [[:actions/store (str/upper-case arg)]])}}
@@ -876,7 +884,7 @@
            [[:actions/store "IT"]])))
 
   (testing "Passes state to action handler"
-    (is (= (-> {:nexus/actions
+    (is (= (-> {:nexus/expansions
                 {:actions/test
                  (fn [state arg]
                    [[:actions/store (:n (:config state)) arg]])}}
@@ -885,7 +893,7 @@
            [[:actions/store 2 "it"]])))
 
   (testing "Returns error when action handler does not return collection of actions"
-    (is (= (-> {:nexus/actions
+    (is (= (-> {:nexus/expansions
                 {:actions/test
                  (fn [{:keys [config]} arg]
                    [:actions/store (:n config) arg])}}
@@ -900,14 +908,14 @@
                                 :data {:res [:actions/store 2 "it"]}})}]})))
 
   (testing "Expands action to empty list of effects"
-    (is (empty? (-> {:nexus/actions
+    (is (empty? (-> {:nexus/expansions
                      {:actions/test
                       (fn [_ _] [])}}
                     (nexus/expand-actions {:config {:n 2}} [[:actions/test "it"]])
                     :effects))))
 
   (testing "Expands actions recursively"
-    (is (= (-> {:nexus/actions
+    (is (= (-> {:nexus/expansions
                 {:actions/inc
                  (fn [_ n]
                    [[:actions/plus n 1]])
@@ -919,7 +927,7 @@
            [[:actions/store "n" 3]])))
 
   (testing "Interpolates placeholders in expanded actions"
-    (is (= (-> {:nexus/actions
+    (is (= (-> {:nexus/expansions
                 {:actions/inc
                  (fn [_ n]
                    [[:actions/plus n [:placeholders/one]]])
@@ -933,7 +941,7 @@
            [[:actions/store "n" 3]])))
 
   (testing "Returns errors from bad action handler"
-    (is (= (-> {:nexus/actions
+    (is (= (-> {:nexus/expansions
                 {:actions/inc
                  (fn [_ _]
                    (throw (ex-info "Boom!" {})))}}

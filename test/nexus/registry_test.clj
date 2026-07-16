@@ -6,17 +6,17 @@
  (fn [system]
    (assoc @system :now #inst "2025-06-23T12:00:00Z")))
 
-(nxr/register-action! ::start
-                      (fn [_ now]
-                        [[::save [:received-at] now]]))
+(nxr/register-expansion! ::start
+  (fn [_ now]
+    [[::save [:received-at] now]]))
 
 (nxr/register-placeholder! :clock/now
-                           (fn [_]
-                             #inst "2025-06-23T12:00:00Z"))
+  (fn [_]
+    #inst "2025-06-23T12:00:00Z"))
 
 (nxr/register-effect! ::save
-                      (fn [_ system path v]
-                        (swap! system assoc-in path v)))
+  (fn [_ system path v]
+    (swap! system assoc-in path v)))
 
 (deftest registry-test
   (testing "Dispatches action via registry"

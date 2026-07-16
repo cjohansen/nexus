@@ -92,7 +92,8 @@
       ctx
       (let [[kind :as action] (interpolate-1 nexus dispatch-data (first actions))
             next-actions (next actions)]
-        (if-let [f (get-in nexus [:nexus/actions kind])]
+        (if-let [f (or (get-in nexus [:nexus/expansions kind])
+                       (get-in nexus [:nexus/actions kind]))]
           (let [[actions err] (try
                                 [(apply f state (next action))]
                                 (catch #?(:clj Exception :cljs :default) e
@@ -183,7 +184,7 @@
            (fn [ctx*]
              (let [[action-k :as action] (interpolate-1 nexus (:dispatch-data ctx*) (:action ctx*))]
                (or
-                (when-let [action-f (get-in nexus [:nexus/actions action-k])]
+                (when-let [action-f (get-in nexus [:nexus/expansions action-k])]
                   (-> (->> (expand-and-dispatch-action nexus dispatch! ctx* action-f action)
                            (reset-ctx-nesting ctx*))
                       (assoc :action action)))
@@ -206,11 +207,9 @@
       (assoc :queue queue :stack stack)))
 
 (defn ^{:indent 3} dispatch [nexus system dispatch-data actions]
-  (when (:nexus/actions nexus)
-    (assert (or (ifn? (:nexus/system->state nexus))
-                (ifn? (:nexus/system+dispatch-data->state nexus)))
-            "Either :nexus/system+dispatch-data->state or :nexus/system->state must be a function"))
-  (let [nexus (update nexus :nexus/interceptors vec)
+  (let [nexus (-> nexus
+                  (update :nexus/expansions #(or % (:nexus/actions nexus)))
+                  (update :nexus/interceptors vec))
         dispatch!
         (fn dispatch! [actions & [disp-data parent-ctx]]
           (let [handler {:phase :action-dispatch
@@ -222,4 +221,8 @@
                                      :actions actions)
               (conj (:nexus/interceptors nexus) handler)
               [:before-dispatch :after-dispatch])))]
+    (when (:nexus/expansions nexus)
+      (assert (or (ifn? (:nexus/system->state nexus))
+                  (ifn? (:nexus/system+dispatch-data->state nexus)))
+              "Either :nexus/system+dispatch-data->state or :nexus/system->state must be a function"))
     (dissoc (dispatch! actions) :nexus :system :state :trace :queue :stack :dispatch :dispatch-data :action :actions)))
