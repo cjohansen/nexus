@@ -35,6 +35,6 @@
                [{:keys [label ns-aliases slow-threshold max-entries max-age]}]]}
   [& [opt]]
   (let [log (create-log opt)]
-    (nxr/register-interceptor! (inspector/get-interceptor log))
     (nxr/register-interceptor! (get-render-interceptor log opt))
+    (nxr/register-interceptor! (inspector/get-interceptor log))
     log))

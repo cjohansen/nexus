@@ -191,17 +191,42 @@
   (lookup [_ _]
     (->ErrorDetail error)))
 
+(defn get-dispatch [{:keys [entries]} id]
+  (->> (fn [ids]
+         (for [id ids]
+           (update (get entries id) :actions #(map :action %))))
+       (update (get entries id) :dispatches)))
+
+(declare ->Dispatch)
+
+(deftype DispatchId [id dispatched-at]
+  dp/IRenderInline
+  (render-inline [_ _]
+    [::ui/code (time/hh:mm:ss dispatched-at)])
+
+  dp/IKeyLookup
+  (lookup [_ log]
+    (->Dispatch (get-dispatch log id))))
+
+(defn render-dispatches [dispatches]
+  (->> dispatches
+       (map-indexed
+        (fn [idx {:keys [id dispatched-at actions]}]
+          (cond-> {:absolute-path [(->DispatchId id dispatched-at)]
+                   :v (->Actions actions)}
+            (= 0 idx) (assoc :label (hiccup/string-label
+                                     (if (= 1 (count dispatches))
+                                       "Nested dispatch"
+                                       "Nested dispatches"))))))))
+
 (defn get-action-entries [{:keys [action interpolated interpolations interpolation-elapsed
-                                  state expansions expansion-elapsed effect effects effect-elapsed result]}]
+                                  state expansions expansion-elapsed effects effect-elapsed
+                                  dispatches result] :as lol}]
   (concat
    (when action
      [{:label (hiccup/string-label "Action")
        :k :action
        :v (->Action action)}])
-   (when effect
-     [{:label (hiccup/string-label "Effect")
-       :k :effect
-       :v (->Action effect)}])
    (when effects
      [{:label (hiccup/string-label "Effects")
        :k :effects
@@ -253,19 +278,8 @@
        :v result}
       {:label (hiccup/string-label "Effect elapsed")
        :k :effect-elapsed
-       :v effect-elapsed}])))
-
-(declare ->Dispatch)
-
-(deftype DispatchId [id dispatched-at]
-  dp/IRenderInline
-  (render-inline [_ _]
-    [::ui/code (time/hh:mm:ss dispatched-at)])
-
-  dp/IKeyLookup
-  (lookup [_ log]
-    (->Dispatch
-     (first (filter (comp #{id} :id) log)))))
+       :v effect-elapsed}])
+   (render-dispatches dispatches)))
 
 (defn get-dispatch-entries [{:keys [dispatched-at dispatched-by dispatch-data dom-event
                                     actions effects dispatches error errors dispatch-elapsed]
@@ -310,15 +324,7 @@
                  :v (->ErrorDetail error)}
           (= 0 idx) (assoc :label (hiccup/string-label "Errors"))))
       errors))
-   (->> dispatches
-        (map-indexed
-         (fn [idx {:keys [id dispatched-at actions]}]
-           (cond-> {:absolute-path [(->DispatchId id dispatched-at)]
-                    :v (->Actions actions)}
-             (= 0 idx) (assoc :label (hiccup/string-label
-                                      (if (= 1 (count dispatches))
-                                        "Nested dispatch"
-                                        "Nested dispatches")))))))
+   (render-dispatches dispatches)
    [{:label (hiccup/string-label "Dispatch elapsed")
      :k :dispatch-elapsed
      :v dispatch-elapsed}]))
@@ -363,8 +369,8 @@
     [::ui/code (time/hh:mm:ss dispatched-at)])
 
   dp/IKeyLookup
-  (lookup [_ {:keys [entries]}]
-    (->Dispatch (update (get entries id) :dispatches #(map entries %)))))
+  (lookup [_ log]
+    (->Dispatch (get-dispatch log id))))
 
 (defn ->dispatch-key [dispatch]
   (->DispatchKey (:id dispatch) (:dispatched-at dispatch)))
