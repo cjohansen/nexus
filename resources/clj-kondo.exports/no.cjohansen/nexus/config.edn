@@ -1,0 +1,5 @@
+{:lint-as
+ {nexus.registry/register-action!      re-frame.core/reg-event-db
+  nexus.registry/register-expansion!   re-frame.core/reg-event-db
+  nexus.registry/register-effect!      re-frame.core/reg-event-db
+  nexus.registry/register-placeholder! re-frame.core/reg-event-db}}
